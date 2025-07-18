@@ -282,31 +282,6 @@ def full_algo(df_start):
 
     df.reset_index(drop=True, inplace=True)
 
-    # find end of near zero to reduce a bit more
-    start, end = [], []
-
-    for elem in ['derivative','all','acc.x','acc.y','acc.z','rotRate.alpha','rotRate.beta','rotRate.gamma']:
-        end_zero = find_zero_phase_end(df[elem])
-        t_end_zero = df.at[end_zero, 'relative_timestamp']
-        end_zero_r = find_zero_phase_end_reverse(df[elem])
-        t_end_zero_r = df.at[end_zero_r, 'relative_timestamp']
-        if end_zero >= df[elem].index[int(len(df[elem])*0.5)]:
-            t_end_zero = df.at[0, 'relative_timestamp']
-        if end_zero_r <= df[elem].index[int(len(df[elem])*0.5)]:
-            t_end_zero_r = df.at[0, 'relative_timestamp']
-
-        start.append(t_end_zero)
-        end.append(t_end_zero_r)
-
-    first_start = np.mean(start) - np.std(start)
-    first_end = np.mean(end) + np.std(end)
-
-    df = df.loc[(df['relative_timestamp'] >= first_start) & (df['relative_timestamp'] <= first_end)].copy()
-    if df.empty:
-        return "empty df after second reduction"
-
-    df.reset_index(drop=True, inplace=True)
-
     # find the 2 turns
     alpha_ma = moving_average(df['alpha'], 20)
 
