@@ -78,7 +78,6 @@ import csv
 
 times = pd.read_csv(r"C:\Users\mathi\manual_times.csv", index_col=0)
 
-
 df_fusion = {}
 
 for key in list(motion_files.keys()):
@@ -93,7 +92,6 @@ for key in list(motion_files.keys()):
             df_fusion[key] = df_final
         except Exception as e:
             print(f"Error on the setup for {key} : {e}")
-
 
 #labels
 for key, df in df_fusion.items():
@@ -118,7 +116,6 @@ y = df['phase']
 
 scaler = MinMaxScaler()
 scaled_features = scaler.fit_transform(df[features])
-
 
 def create_sequences_classification(X, y, time_steps=60):
     X_seq, y_seq = [], []
