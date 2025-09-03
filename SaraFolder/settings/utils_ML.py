@@ -1,10 +1,15 @@
+import os
+from collections import Counter
+
 import numpy as np
+from matplotlib import pyplot as plt
 from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, Dropout, Bidirectional, LSTM, TimeDistributed, Dense
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Conv1D, Bidirectional, LSTM, TimeDistributed, Dense, Dropout
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.utils import to_categorical
+
+from SaraFolder.settings import utils_plots, running_settings
 
 
 def majority_vote_predictions(y_pred_seq, total_frames, time_steps=60):
@@ -134,7 +139,7 @@ def clean_predictions_contextual(preds, min_length=10):
 def compute_accuracy(y_true, y_pred):
     return np.mean(y_true == y_pred)
 
-def create_sequences_classification(X, y, time_steps=60):
+def create_sequences_classification(X, y, time_steps=60): # here? timesteps is always in 60milliseconds?
     X_seq, y_seq = [], []
     for i in range(len(X) - time_steps):
         X_seq.append(X[i:i+time_steps])
@@ -147,6 +152,8 @@ def define_data(df):
     X = df[features]
     y = df['phase']
 
+    # Here we are removing the msFromStart column. This is not a feature ok.
+    # But we are loosing the time info. Not the consecutiveness of elements.
     scaler = MinMaxScaler()
     scaled_features = scaler.fit_transform(df[features])
 
@@ -156,11 +163,14 @@ def define_data(df):
     print("y shape:", y_seq.shape)
 
     X_train, X_test, y_train, y_test = train_test_split(X_seq, y_seq, test_size=0.2, shuffle=False)
+    X_val, X_holdout, y_val, y_holdout = train_test_split(X_test, y_test, test_size=0.5, shuffle=False)
 
-    return X, y, X_train, X_test, y_train, y_test
+    return X, y, X_train, X_val, y_train, y_val, X_holdout, y_holdout
 
 
-def define_model():
+
+def define_model(model_name):
+    # Anywhere that this come from?
     model = Sequential()
     model.add(Conv1D(64, kernel_size=3, activation='relu', padding='same', input_shape=(60, 9)))
     model.add(Dropout(0.1))
@@ -171,15 +181,15 @@ def define_model():
 
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-    checkpoint = ModelCheckpoint("best_model_v2.h5", save_best_only=True, monitor='val_loss', mode='min', verbose=1)
-
+    path_dir = running_settings.models_path + os.sep + model_name
+    checkpoint = ModelCheckpoint(path_dir, save_best_only=True, monitor='val_loss', mode='min', verbose=1,
+                                 patience=10)
     return model, checkpoint
 
 
 def model_fit(model, X_train, y_train, X_test, y_test, checkpoint):
     history = model.fit(
         X_train, y_train,
-        # TODO: problem here, validation data is NOT X_test, y_test !!
         validation_data=(X_test, y_test),
         batch_size=16,
         epochs=10,
@@ -189,7 +199,6 @@ def model_fit(model, X_train, y_train, X_test, y_test, checkpoint):
 
 
 def evaluate_model(model, X_test, y_test, df):
-    # TODO: problem here not using same validation data !!
     loss, acc = model.evaluate(X_test, y_test)
     print(f"Accuracy: {acc:.2f}")
 
@@ -233,23 +242,30 @@ def compute_stats_model(y_true_full, y_pred_full, y_pred_cleaned):
     pass
 
 
+def load_existing_model(path):
+    return load_model(path)
+
+
 def ml_pipeline(df):
-    X, y, X_train, X_test, y_train, y_test = define_data(df)
+    X, y, X_train, X_val, y_train, y_val, X_holdout, y_holdout = define_data(df)
 
-    model, checkpoint = define_model()
+    model_name = "best_model.h5"
 
-    history, model = model_fit(model, X_train, y_train, X_test, y_test, checkpoint)
+    if not running_settings.load_existing_model:
+        model, checkpoint = define_model(model_name)
+        history, model = model_fit(model, X_train, y_train, X_val, y_val, checkpoint)
+        utils_plots.plot_training_history(history, title=model_name.strip('.h5') + '.jpg')
 
-    # TODO: problem here, same data as validation
-    predicted_classes = evaluate_model(model, X_test, y_test, df)
+    else:
+        model = load_existing_model(running_settings.models_path + os.sep + model_name)
 
-    X_full = reconstruct_X_from_sequences(X_test, time_steps=60)
+    predicted_classes = evaluate_model(model, X_holdout, y_holdout, df)
 
-    y_true_full = reconstruct_y_binary_fast(y_test, time_steps=60)
+    y_true_full = reconstruct_y_binary_fast(y_holdout, time_steps=60)
 
     predicted_classes = np.squeeze(predicted_classes, axis=-1)  # => (87171, 60)
 
-    y_pred_full = majority_vote_predictions(y_pred_seq=predicted_classes, total_frames=len(X_test), time_steps=60)
+    y_pred_full = majority_vote_predictions(y_pred_seq=predicted_classes, total_frames=len(X_holdout), time_steps=60)
 
     y_pred_cleaned = plot_results(X, y_pred_full, y_true_full)
 
