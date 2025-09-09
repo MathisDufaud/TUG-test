@@ -37,3 +37,41 @@ def plot_training_history(history, title):
     plt.tight_layout()
     plt.savefig(running_settings.figures_path + os.sep + title, dpi=400)
     plt.show()
+
+
+def plot_labelling_tug(df_plot, res):
+    if res is None:
+        print(res)
+        # Problem we can't plot, return error warning
+        raise ValueError("No phases detected, cannot plot.")
+    else:
+        (t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end) = res
+
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+    ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
+             label="Motion (m/s²)", color="blue", linestyle="-")
+
+    ax1.set_xlabel("Time (s)")
+    ax1.set_ylabel("Acceleration (m/s²)", color="blue")
+    ax1.tick_params(axis='y', labelcolor="blue")
+
+    ax1.axvspan(t_start, t_end, color="orange", alpha=0.2, label="Total duration")
+    ax1.axvspan(t_start_turn, t_end_turn, color="limegreen", alpha=0.5, label="First turn")
+    ax1.axvspan(t_start_turn2, t_end_turn2, color="darkgreen", alpha=0.5, label="Second turn")
+    ax1.axvspan(t_start, t_end_stand, color="red", alpha=0.5, label="First turn")
+    ax1.axvspan(t_start_sit, t_end, color="pink", alpha=0.5, label="Second turn")
+
+    ax3 = ax1.twinx()
+    ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
+    ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
+    ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
+
+    plt.xticks(rotation=45)
+
+    ax1.grid()
+    ax1.legend(loc="upper left")
+    ax3.legend(loc="lower right")
+
+    plt.title("Results on motion and orientation")
+
+    plt.show()

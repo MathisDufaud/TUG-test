@@ -12,16 +12,17 @@ from SaraFolder.settings import running_settings
 base_path = running_settings.data_path
 
 def ready_df():
-    if not os.path.exists(base_path + os.sep + "df_processed.pickle"):
+    if not os.path.exists(base_path + os.sep + running_settings.name_df_processed):
         motion_files, orientation_files = loader()
         df = load_fusiondf(motion_files, orientation_files)
         # Save dictionary to pickle
-        pickle.dump(df, open(base_path + os.sep + "df_processed.pickle", "wb"))
+        pickle.dump(df, open(base_path + os.sep + running_settings.name_df_processed, "wb"))
     else:
-        df = pickle.load(open(base_path + os.sep + "df_processed.pickle", "rb"))
-
-    return labelling_phases(df)
-
+        df = pickle.load(open(base_path + os.sep + running_settings.name_df_processed, "rb"))
+    if 'labelling' in running_settings.name_df_processed:
+        return df
+    else:
+        return labelling_phases(df)
 
 def clinic_sessions():
     # Looping through patients to upload motion and orientation files
@@ -34,7 +35,6 @@ def clinic_sessions():
     '43765084','44142351', '48234516', '44143711', '44451585', '48597759','48974829','46371264',
     '46690193', '51363556', '48341540', '51577424', '48610252', '50189491'
     ]
-
 
 
 def loader():
@@ -84,28 +84,77 @@ def moving_average(data, window=5):
     return rolling_mean
 
 def setup_df(df_m,df_o):
-    df_corrected = df_o.copy()
-    for elem in ['alpha','beta','gamma']:
-        base = df_corrected[elem].iloc[0]
-        for i in range(len(df_corrected)):
-            val = df_corrected[elem].iloc[i]
-            # Correction: TODO - empirically tested - check
-            if val > base + 50:
-                df_corrected.loc[i:,elem] -= abs(val-base)
-            elif val < base - 50:
-                df_corrected.loc[i:,elem] += abs(val-base)
-            base = df_corrected[elem].iloc[i]
+    if False:
+        """
+        This version is from tugt_LSTM
+        """
+        df_corrected = df_o.copy()
+        for elem in ['alpha','beta','gamma']:
+            base = df_corrected[elem].iloc[0]
+            for i in range(len(df_corrected)):
+                val = df_corrected[elem].iloc[i]
+                # Correction: TODO - empirically tested - check
+                if val > base + 50:
+                    df_corrected.loc[i:,elem] -= abs(val-base)
+                elif val < base - 50:
+                    df_corrected.loc[i:,elem] += abs(val-base)
+                base = df_corrected[elem].iloc[i]
 
-    #interpolate - why is it necessary? Isnt' the 'relative_timestamp' column in df_m and in df_corrected, the same?
-    df_final = df_m.copy()
-    df_final['alpha'] = np.interp(df_m['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['alpha'])
-    df_final['beta'] = np.interp(df_m['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['beta'])
-    df_final['gamma'] = np.interp(df_m['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['gamma'])
-    df_final['phase'] = np.zeros(len(df_final))
+        #interpolate - why is it necessary? Isnt' the 'relative_timestamp' column in df_m and in df_corrected, the same?
+        df_final = df_m.copy()
+        df_final['alpha'] = np.interp(df_m['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['alpha'])
+        df_final['beta'] = np.interp(df_m['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['beta'])
+        df_final['gamma'] = np.interp(df_m['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['gamma'])
+        df_final['phase'] = np.zeros(len(df_final))
 
-    df_final['alpha'] = moving_average(df_final['alpha'],20)
-    for elem in ['beta','gamma','acc.x','acc.y','acc.z','rotRate.alpha','rotRate.beta','rotRate.gamma']:
-        df_final[elem] = moving_average(df_final[elem])
+        df_final['alpha'] = moving_average(df_final['alpha'],20)
+        for elem in ['beta','gamma','acc.x','acc.y','acc.z','rotRate.alpha','rotRate.beta','rotRate.gamma']:
+            df_final[elem] = moving_average(df_final[elem])
+    if True:
+        """
+        This version is from tugt_labelling
+        """
+        df_corrected = df_o.copy()
+
+        for elem in ['alpha', 'beta', 'gamma']:
+            base = df_corrected[elem].iloc[0]
+            for i in range(len(df_corrected)):
+                val = df_corrected[elem].iloc[i]
+                if val > base + 50:
+                    df_corrected.loc[i:, elem] -= abs(val - base)
+                elif val < base - 50:
+                    df_corrected.loc[i:, elem] += abs(val - base)
+                base = df_corrected[elem].iloc[i]
+
+        # interpolate
+        df_final = df_m.copy()
+        df_final['alpha'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
+                                      df_corrected['alpha'])
+        df_final['beta'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
+                                     df_corrected['beta'])
+        df_final['gamma'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
+                                      df_corrected['gamma'])
+
+        # create new columns
+        df_final['all'] = np.sqrt(((np.abs(df_final['acc.x']) - np.min(np.abs(df_final['acc.x']))) / (
+                    np.max(np.abs(df_final['acc.x'])) - np.min(np.abs(df_final['acc.x'])))) ** 2
+                                  + ((np.abs(df_final['acc.y']) - np.min(np.abs(df_final['acc.y']))) / (
+                    np.max(np.abs(df_final['acc.y'])) - np.min(np.abs(df_final['acc.y'])))) ** 2
+                                  + ((np.abs(df_final['acc.z']) - np.min(np.abs(df_final['acc.z']))) / (
+                    np.max(np.abs(df_final['acc.z'])) - np.min(np.abs(df_final['acc.z'])))) ** 2
+                                  + ((np.abs(df_final['rotRate.alpha']) - np.min(np.abs(df_final['rotRate.alpha']))) / (
+                    np.max(np.abs(df_final['rotRate.alpha'])) - np.min(np.abs(df_final['rotRate.alpha'])))) ** 2
+                                  + ((np.abs(df_final['rotRate.beta']) - np.min(np.abs(df_final['rotRate.beta']))) / (
+                    np.max(np.abs(df_final['rotRate.beta'])) - np.min(np.abs(df_final['rotRate.beta'])))) ** 2
+                                  + ((np.abs(df_final['rotRate.gamma']) - np.min(np.abs(df_final['rotRate.gamma']))) / (
+                    np.max(np.abs(df_final['rotRate.gamma'])) - np.min(np.abs(df_final['rotRate.gamma'])))) ** 2)
+
+        df_final['derivative'] = np.abs(np.gradient(df_final['alpha'])) + np.abs(
+            np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
+
+        df_final['der_beta_gamma'] = np.abs(np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
+
+        df_final['rotRate_beta_gamma'] = np.sqrt((df_final['rotRate.beta']) ** 2 + (df_final['rotRate.gamma']) ** 2)
 
     return df_final
 
