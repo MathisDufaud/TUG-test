@@ -272,7 +272,7 @@ def full_algo(df_start):
 def looping_tests(df_fusion):
     # loop for all tests
     algo_results = {}
-
+    # TODO: keep track of what is not computed (missed turns, no data...)
     for key, df_final in df_fusion.items():
         result = full_algo(df_final)
         if isinstance(result, str):

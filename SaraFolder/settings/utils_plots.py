@@ -75,3 +75,51 @@ def plot_labelling_tug(df_plot, res):
     plt.title("Results on motion and orientation")
 
     plt.show()
+
+
+def plot_tugtoverview(df_general):
+    """ Figure with subplots
+    1) Number of test per participant
+    2) Frequency distribution of the test per participant
+    3) Boxplot of the duration of the test per participant
+    4) DurationGT boxplot per participant
+    columns: Participant, Session, samples, duration
+    """
+    fig = plt.figure(figsize=(12, 8))
+    ax1 = fig.add_subplot(2, 2, 1)
+    df_count = df_general.groupby('Participant').size()
+    df_count.plot(kind='bar', ax=ax1, color='skyblue')
+    ax1.set_title('Number of tests per participant')
+    ax1.set_xlabel('Participant')
+    ax1.set_ylabel('Number of tests')
+    ax1.grid(axis='y')
+    ax2 = fig.add_subplot(2, 2, 2)
+    df_general['freq'] = df_general['samples'] / df_general['duration']
+    df_general.groupby('Participant')['freq'].plot(kind='hist',ax=ax2)
+    ax2.set_xlabel('Frequency (Hz)')
+    ax2.set_title('Frequency distribution per participant, per test')
+    ax2.grid(axis='y')
+    ax2.set_ylim(0, 20)
+    ax3 = fig.add_subplot(2, 2, 3)
+    df_general.boxplot(column='duration', by='Participant', ax=ax3)
+    ax3.set_title('Duration of the test per participant (raw)')
+    ax3.set_xlabel('Participant')
+    ax3.set_ylabel('Duration (s)')
+    ax3.grid(axis='y')
+    ax4 = fig.add_subplot(2, 2, 4)
+    df_general.boxplot(column='durationGT', by='Participant', ax=ax4)
+    ax4.set_title('Duration of the test per participant (GT)')
+    ax4.set_xlabel('Participant')
+    ax4.set_ylabel('Duration (s)')
+    ax4.grid(axis='y')
+
+
+    plt.tight_layout()
+    plt.suptitle('')
+    plt.savefig(running_settings.figures_path + os.sep + 'tug_overview.jpg', dpi=400)
+    plt.show()
+
+
+
+
+    return None
