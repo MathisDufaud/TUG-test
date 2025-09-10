@@ -7,6 +7,8 @@ import glob
 
 import pickle
 
+from matplotlib import pyplot as plt
+
 from SaraFolder.settings import running_settings, classes, utils_plots
 
 base_path = running_settings.data_path
@@ -251,24 +253,27 @@ def load_groundtruth_dict():
     return dict_times
 
 
-
-
-def tugt_overview(df_fusion, df_gt_dict):
-    skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
-
-
-    df_general = pd.DataFrame(columns=['Participant', 'Session', 'samples', 'duration', 'duration GT'])
+def build_general_df(df_fusion, df_gt_dict):
+    df_general = pd.DataFrame(columns=['Participant', 'Session', 'samples', 'duration', 'durationGT'])
     for key, df in df_fusion.items():
         participant = key.split('_')[0]
         session = key.split('_')[1]
         n_samples = len(df)
-        duration = (df['msFromStart'].iloc[-1] - df['msFromStart'].iloc[0])/1000
+        duration = (df['msFromStart'].iloc[-1] - df['msFromStart'].iloc[0]) / 1000
         durationGT = df_gt_dict[key[:-2]]['t_end'] - df_gt_dict[key[:-2]]['t_start']
         df_general = pd.concat([df_general, pd.DataFrame({'Participant': [participant],
                                                           'Session': [session],
                                                           'samples': [n_samples],
                                                           'duration': [duration],
-                                                          'durationGT':[durationGT]})], ignore_index=True)
+                                                          'durationGT': [durationGT]})], ignore_index=True)
+    return df_general
+
+
+def tugt_overview(df_fusion, df_gt_dict):
+    skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
+
+    df_general = build_general_df(df_fusion, df_gt_dict)
+
     utils_plots.plot_tugtoverview(df_general)
 
     lg = classes.Logger(running_settings.results_path + os.sep + running_settings.tugt_overview)
@@ -278,7 +283,8 @@ def tugt_overview(df_fusion, df_gt_dict):
     print("\nSkipped tests for various reasons: ", len(skipped))
     print("\nRemaining tests for analysis: ", len(df_fusion))
     print("\n# Participants: ", df_general['Participant'].nunique())
-    print("\nAverage frequency (Hz) samples/seconds: ", round((df_general['samples']/df_general['duration']).mean(), 2))
+    print("\nAverage frequency (Hz) samples/seconds: ",
+          round((df_general['samples'] / df_general['duration']).mean(), 2))
     print("\nAverage # test per participant: ", df_general.groupby('Participant').size().mean())
     print("\nMin # test per participant: ", df_general.groupby('Participant').size().min())
     print("\nMax # test per participant: ", df_general.groupby('Participant').size().max())
@@ -296,3 +302,69 @@ def tugt_overview(df_fusion, df_gt_dict):
     sys.stdout = sys.__stdout__
 
     return None
+
+
+def compute_df_filtered(s, df_general):
+    """
+    Filter participants with at least s samples, taking the first s sessions per participant.
+
+    Parameters:
+    -----------
+    s : int
+        Minimum number of samples per participant.
+    df_general : pd.DataFrame
+        Must contain columns 'Participant' and 'Session'.
+
+    Returns:
+    --------
+    pd.DataFrame
+        Filtered dataframe with up to s sessions per participant.
+    """
+    filtered_list = []
+
+    for pid, group in df_general.groupby('Participant'):
+        if len(group) >= s:
+            # Change Session values to be from 1 to s
+            group = group.copy()
+            group = group.sort_values('Session')
+            group['Session'] = range(1, len(group) + 1)
+            filtered_list.append(group.sort_values('Session').head(s))
+
+    # Concatenate all filtered participants
+    df_filtered = pd.concat(filtered_list, ignore_index=True)
+
+    return df_filtered
+
+
+def tugt_icc(df_fusion, df_gt_dict):
+    df_general = build_general_df(df_fusion, df_gt_dict)
+    # Columns participant and sessions are numbers but are now treated as string, I want them to be int
+    df_general['Participant'] = df_general['Participant'].astype(int)
+    df_general['Session'] = df_general['Session'].astype(int)
+
+    # Calculate ICC for durationGT per participant
+    from pingouin import intraclass_corr
+
+    sizes = [2, 3, 4, 5, 6, 7, 8]
+    icc_s = {}
+    for s in sizes:
+        df_filtered = compute_df_filtered(s, df_general)
+
+        if df_filtered['Participant'].nunique() < 5:
+            print(
+                f"Skipping size {s} due to insufficient unique participants ({df_filtered['Participant'].nunique()}).")
+            continue
+
+        icc_result = intraclass_corr(data=df_filtered,
+                                     targets='Participant',
+                                     raters='Session',
+                                     ratings='durationGT')
+
+        icc_2_1 = icc_result[icc_result['Type'] == 'ICC2']
+        participants = df_filtered['Participant'].nunique()
+        sessionstot = len(df_filtered)
+        key_name = f'{s}_p{participants}_s{sessionstot}'
+        icc_s[key_name] = icc_result
+        print("\n")
+
+    return icc_s

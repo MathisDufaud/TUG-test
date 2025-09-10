@@ -60,18 +60,13 @@ def phases_eval(all_results, gt_dict):
 
 
 def evaluate_results(all_results, gt_dict, eval_type):
-    # TODO: why all_results and df_gt have different lengths?!
-    #  GT not computed for a lot of tests, why?
-    #  A lot of skipped tests, some of them maybe are not that wrong?
+    # TODO: A lot of skipped tests, some of them maybe are not that wrong?
 
     if True:
         all_results = {k: v for k, v in all_results.items() if k[:-2] in gt_dict.keys()}
     # key = list(all_results.keys())[0]
     # keygt = key[:-2]
 
-    if eval_type == 'test_no_test':
-        pass
-        # test_no_test_eval(all_results, gt_dict)
     if eval_type == 'phases':
         indiv_errors, indiv_errors_duration = phases_eval(all_results, gt_dict)
 
@@ -140,6 +135,60 @@ def analyze_error_patterns(df):
         'iteration_effects': iteration_mae
     }
 
+
+def export_error_analysis_to_excel(df, filename="error_labelling.xlsx"):
+    """
+    Analyze error patterns and save a detailed Excel report, combining phase bias and variability.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Must contain columns: 'phase', 'individual_id', 'iteration_id', 'error', 'abs_error'.
+    filename : str
+        Output Excel file path.
+
+    Returns:
+    --------
+    None
+    """
+    # 1. Phase bias (mean error) and direction
+    phase_bias = df.groupby('phase')['error'].mean()
+    phase_bias_df = phase_bias.reset_index().rename(columns={'error': 'mean_error'})
+    phase_bias_df['direction'] = phase_bias_df['mean_error'].apply(
+        lambda x: 'overestimation' if x > 0 else 'underestimation')
+
+    # 2. Phase variability (std) and limits of agreement
+    phase_std = df.groupby('phase')['error'].std().reset_index().rename(columns={'error': 'std_error'})
+
+    # Merge bias and std to get one combined table
+    phase_summary_df = phase_bias_df.merge(phase_std, on='phase')
+    phase_summary_df['LoA_lower'] = phase_summary_df['mean_error'] - 1.96 * phase_summary_df['std_error']
+    phase_summary_df['LoA_upper'] = phase_summary_df['mean_error'] + 1.96 * phase_summary_df['std_error']
+
+    # 3. Individual errors
+    individual_mae = df.groupby('individual_id')['abs_error'].mean().sort_values(ascending=False)
+    individual_mae_df = individual_mae.reset_index().rename(columns={'abs_error': 'MAE'})
+
+    # 4. Iteration effects
+    iteration_mae = df.groupby('iteration_id')['abs_error'].mean().sort_values(ascending=False)
+    iteration_mae_df = iteration_mae.reset_index().rename(columns={'abs_error': 'MAE'})
+
+    # Optional: full iteration stats including counts
+    iteration_stats = df.groupby('iteration_id').agg(
+        mean_error=('error', 'mean'),
+        mean_abs_error=('abs_error', 'mean'),
+        count=('iteration_id', 'count')
+    ).reset_index()
+
+    # Write to Excel
+    with pd.ExcelWriter(running_settings.results_path + os.sep + filename) as writer:
+        phase_summary_df.to_excel(writer, sheet_name="Phase Summary", index=False)
+        individual_mae_df.to_excel(writer, sheet_name="Individual Errors", index=False)
+        iteration_mae_df.to_excel(writer, sheet_name="Iteration MAE", index=False)
+        iteration_stats.to_excel(writer, sheet_name="Iteration Stats", index=False)
+
+    print(f"Error analysis exported to {filename}")
+
 def plot_error_distributions(df):
     """
     Create visualizations of error distributions.
@@ -168,22 +217,37 @@ def plot_error_distributions(df):
     axes[1, 0].set_ylabel('Frequency')
 
     # 4. Error vs iteration
-    #TODO: add here size of the ball for number of tests per iteration
     iteration_stats = df.groupby('iteration_id').agg({
         'error': 'mean',
-        'abs_error': 'mean'
-    }).reset_index()
-    axes[1, 1].plot(iteration_stats['iteration_id'].astype(int),
-                    iteration_stats['error'], marker='o', label='Mean Error')
-    # axes[1, 1].scatter(iteration_stats['iteration_id'].astype(int),
-    #                    iteration_stats['abs_error'])
+        'abs_error': 'mean',
+        'iteration_id': 'count'  # count number of samples
+    }).rename(columns={'iteration_id': 'count'}).reset_index()
+
+    # Use scatter with size scaled by count
+    axes[1, 1].scatter(
+        iteration_stats['iteration_id'].astype(int),
+        iteration_stats['error'],
+        s=iteration_stats['count'] * 10,  # scale factor (adjust as needed)
+        alpha=0.6,
+        label='Mean Error'
+    )
+    # Horizontal black dashed line at 0
+    axes[1, 1].axhline(y=0, color='black', linestyle='--', alpha=0.7)
     axes[1, 1].set_title('MAE by Iteration')
     axes[1, 1].set_xlabel('Iteration ID')
     axes[1, 1].set_ylabel('MAE')
+    # Add a custom legend for count = 1
+    legend_handles = [
+        plt.scatter([], [], s=7 * 10, color='C0', alpha=0.6, label='count = 1 TUG')
+    ]
+
+    axes[1, 1].legend(handles=legend_handles, title="Bubble Size")
 
     plt.tight_layout()
+    plt.suptitle('')
     plt.savefig(running_settings.figures_path + os.sep + 'error_labelling.jpg', dpi=400)
     plt.show()
+
 def parse_key(key: str):
     """
     Extract (individual_id, test_iteration, base_key) from result key.

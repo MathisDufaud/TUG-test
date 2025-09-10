@@ -1,6 +1,8 @@
 import os
-
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Rectangle
+import re
 
 from SaraFolder.settings import running_settings
 
@@ -119,7 +121,153 @@ def plot_tugtoverview(df_general):
     plt.savefig(running_settings.figures_path + os.sep + 'tug_overview.jpg', dpi=400)
     plt.show()
 
-
-
-
     return None
+
+
+
+def plot_icc(icc_s, icctype='ICC2'):
+    """
+    Plot ICC values with confidence intervals for a specific ICC type across different configurations.
+
+    Parameters:
+    -----------
+    icc_s : dict
+        Dictionary containing ICC results for different configurations
+    icctype : str
+        Type of ICC to plot (default: 'ICC2')
+        Options: 'ICC1', 'ICC2', 'ICC3', 'ICC1k', 'ICC2k', 'ICC3k'
+    """
+
+    # Extract data for the specified ICC type
+    configurations = []
+    icc_values = []
+    ci_lower = []
+    ci_upper = []
+    pvalues = []
+
+    for config_name, df in icc_s.items():
+        # Find the row with the specified ICC type
+        icc_row = df[df['Type'] == icctype]
+
+        if not icc_row.empty:
+            configurations.append(config_name)
+            icc_values.append(icc_row['ICC'].iloc[0])
+            pvalues.append(icc_row['pval'].iloc[0])
+
+            # Parse confidence interval
+            ci_str = str(icc_row['CI95%'].iloc[0])
+            # Extract numbers from CI string like '[0.26, 0.78]'
+            ci_nums = re.findall(r'[\d.]+', ci_str)
+            if len(ci_nums) >= 2:
+                ci_lower.append(float(ci_nums[0]))
+                ci_upper.append(float(ci_nums[1]))
+            else:
+                ci_lower.append(icc_row['ICC'].iloc[0])
+                ci_upper.append(icc_row['ICC'].iloc[0])
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # Extract numbers from configuration names for x-axis (assuming format like '2_p26_s52')
+    x_labels = []
+    x_positions = []
+    for i, config in enumerate(configurations):
+        # Extract the first number from the configuration name
+        match = re.match(r'(\d+)', config)
+        if match:
+            x_labels.append(f"Config {match.group(1)}")
+            x_positions.append(int(match.group(1)))
+        else:
+            x_labels.append(config)
+            x_positions.append(i + 1)
+
+    # Sort by x_positions to maintain order
+    sorted_indices = np.argsort(x_positions)
+    x_positions = [x_positions[i] for i in sorted_indices]
+    x_labels = [x_labels[i] for i in sorted_indices]
+    icc_values = [icc_values[i] for i in sorted_indices]
+    ci_lower = [ci_lower[i] for i in sorted_indices]
+    ci_upper = [ci_upper[i] for i in sorted_indices]
+    pvalues = [pvalues[i] for i in sorted_indices]
+
+    # Calculate error bars
+    yerr_lower = [icc_values[i] - ci_lower[i] for i in range(len(icc_values))]
+    yerr_upper = [ci_upper[i] - icc_values[i] for i in range(len(icc_values))]
+    yerr = [yerr_lower, yerr_upper]
+
+    # Create color map based on p-values
+    colors = []
+    for pval in pvalues:
+        if pval < 0.001:
+            colors.append('darkgreen')
+        elif pval < 0.01:
+            colors.append('green')
+        elif pval < 0.05:
+            colors.append('orange')
+        else:
+            colors.append('red')
+
+    # Plot ICC values with error bars
+    bars = ax.bar(x_positions, icc_values,
+                  yerr=yerr, capsize=5, color=colors, alpha=0.7, edgecolor='black', linewidth=1)
+
+    # Customize the plot
+    ax.set_xlabel('Configuration', fontsize=12, fontweight='bold')
+    ax.set_ylabel('ICC Value', fontsize=12, fontweight='bold')
+    ax.set_title(f'{icctype} Values with 95% Confidence Intervals',
+                 fontsize=14, fontweight='bold', pad=20)
+
+    # Set x-axis
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(x_labels, rotation=45, ha='right')
+
+    # Add grid
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add horizontal line for different ICC interpretation levels
+    ax.axhline(y=0.5, color='gray', linestyle='--', alpha=0.5, label='Poor (0.5)')
+    ax.axhline(y=0.75, color='gray', linestyle='--', alpha=0.5, label='Good (0.75)')
+    ax.axhline(y=0.9, color='gray', linestyle='--', alpha=0.5, label='Excellent (0.9)')
+
+    # Create legend for p-value colors
+    legend_elements = [
+        Rectangle((0, 0), 1, 1, facecolor='darkgreen', alpha=0.7, label='p < 0.001'),
+        Rectangle((0, 0), 1, 1, facecolor='green', alpha=0.7, label='p < 0.01'),
+        Rectangle((0, 0), 1, 1, facecolor='orange', alpha=0.7, label='p < 0.05'),
+        Rectangle((0, 0), 1, 1, facecolor='red', alpha=0.7, label='p ≥ 0.05')
+    ]
+
+    # Add legends
+    legend1 = ax.legend(handles=legend_elements, loc='upper left',
+                        title='Significance Level', framealpha=0.9)
+    ax.add_artist(legend1)
+
+    # Add text annotations for ICC values
+    for i, (pos, val, pval) in enumerate(zip(x_positions, icc_values, pvalues)):
+        ax.text(pos, val + 0.02, f'{val:.3f}',
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+        ax.text(pos, val - 0.05, f'p={pval:.2e}' if pval < 0.001 else f'p={pval:.3f}',
+                ha='center', va='top', fontsize=8, style='italic')
+
+    # Set y-axis limits
+    y_min = min(ci_lower) - 0.1
+    y_max = min(max(ci_upper) + 0.15, 1.0)
+    ax.set_ylim(y_min, y_max)
+
+    # Adjust layout
+    plt.tight_layout()
+
+    # Show plot
+    plt.show()
+
+    # Print summary statistics
+    print(f"\n{icctype} Summary Statistics:")
+    print("=" * 40)
+    print(f"Mean ICC: {np.mean(icc_values):.3f}")
+    print(f"Std ICC: {np.std(icc_values):.3f}")
+    print(f"Min ICC: {np.min(icc_values):.3f}")
+    print(f"Max ICC: {np.max(icc_values):.3f}")
+    print(f"Configurations with ICC > 0.75: {sum(1 for x in icc_values if x > 0.75)}/{len(icc_values)}")
+    print(f"Configurations with ICC > 0.9: {sum(1 for x in icc_values if x > 0.9)}/{len(icc_values)}")
+
+    return fig, ax
