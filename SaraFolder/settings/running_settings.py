@@ -1,8 +1,26 @@
-data_path = r"C:\Users\ao4518\Desktop\PHD\TUG-test\all_data"
-figures_path = r"C:\Users\ao4518\Desktop\PHD\TUG-test\SaraFolder\results_s\figures"
-results_path = r"C:\Users\ao4518\Desktop\PHD\TUG-test\SaraFolder\results_s"
-models_path = r"C:\Users\ao4518\Desktop\PHD\TUG-test\SaraFolder\results_s\models"
+##################### Data
+data_parkapp = r"C:\Users\ao4518\Desktop\PHD\TUG-test\all_data"
+data_synergy = ""
+data_pisatug = ""
 
+##################### Results
+results_path = r"C:\Users\ao4518\Desktop\PHD\TUG-test\SaraFolder\results"
+results_parkapp = results_path + r"\results_parkapp"
+results_synergy = results_path + r"\results_synergy"
+results_pisatug = results_path + r"\results_pisatug"
+results_all = results_path + r"\results_all"
+
+##################### Figures
+figures_parkapp = results_parkapp + r"\figures"
+figures_synergy = results_synergy + r"\figures"
+figures_pisatug = results_pisatug + r"\figures"
+figures_all = results_all + r"\figures_all"
+
+##################### Models
+models_parkapp = results_parkapp + r"\models"
+
+##################### Variables names
+########## Park App Tests
 # name_df_processed = "df_processed.pickle" # name of the processed dataframe - LSTM
 name_df_processed = "dfprocessed_labelling.pickle" # name of the processed dataframe - LABELLING
 res_name = "results_labelling.txt"

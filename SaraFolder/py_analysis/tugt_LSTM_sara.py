@@ -1,4 +1,5 @@
-from SaraFolder.settings import utils_ML, utils_functions
+from SaraFolder.settings import utils_ML
+from SaraFolder.settings.utils_parkaapp import utils_functions
 
 if __name__ == "__main__":
 

@@ -40,12 +40,12 @@ def phases_eval(all_results, gt_dict):
 
     for key, result in all_results.items():
         indiv_id, test_iter, clean_key = parse_key(key)
-        if clean_key not in gt_dict:
+        if key not in gt_dict:
             continue
 
         # remove unwanted key
         result = {k: v for k, v in result.items() if k != "t_end_turn2"}
-        gt = gt_dict[clean_key]
+        gt = gt_dict[key]
 
         # compute errors per phase (timestamp)
         errors = {phase: result[phase] - gt[phase] for phase in result.keys() if phase in gt}
@@ -59,20 +59,27 @@ def phases_eval(all_results, gt_dict):
 
 
 
-def evaluate_results(all_results, gt_dict, eval_type):
+def evaluate_results(all_tests, eval_type, method, dataset):
     # TODO: A lot of skipped tests, some of them maybe are not that wrong?
 
-    if True:
-        all_results = {k: v for k, v in all_results.items() if k[:-2] in gt_dict.keys()}
-    # key = list(all_results.keys())[0]
-    # keygt = key[:-2]
+    all_results = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.results['labelling'] for test in all_tests if 'labelling' in test.results.keys()}
+    all_gts = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.gt_phases.to_dict() for test in all_tests if test.gt_phases is not None}
 
     if eval_type == 'phases':
-        indiv_errors, indiv_errors_duration = phases_eval(all_results, gt_dict)
+        indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
+
+        if dataset == 'parkapp':
+            res_path = running_settings.results_parkapp + \
+                       os.sep + 'results_'+method+'.txt'
+        elif dataset == 'synergy':
+            res_path = running_settings.results_synergy + \
+                                os.sep + 'results_'+method+'.txt'
+        elif dataset:
+            res_path = running_settings.results_pisatug + \
+                                os.sep + 'results_'+method+'.txt'
 
         # Logger start
-        lg = classes.Logger(running_settings.results_path +
-                            os.sep + running_settings.res_name)
+        lg = classes.Logger(res_path)
         sys.stdout = lg
 
         print(f"Total individuals evaluated: {len(indiv_errors_duration)}")
@@ -89,7 +96,7 @@ def evaluate_results(all_results, gt_dict, eval_type):
         patterns = analyze_error_patterns(df)
 
         # Create visualizations
-        plot_error_distributions(df)
+        plot_error_distributions(df, method=method)
 
         lg.stop_logging()
         sys.stdout = sys.__stdout__
@@ -189,7 +196,7 @@ def export_error_analysis_to_excel(df, filename="error_labelling.xlsx"):
 
     print(f"Error analysis exported to {filename}")
 
-def plot_error_distributions(df):
+def plot_error_distributions(df, method):
     """
     Create visualizations of error distributions.
     """
@@ -245,7 +252,7 @@ def plot_error_distributions(df):
 
     plt.tight_layout()
     plt.suptitle('')
-    plt.savefig(running_settings.figures_path + os.sep + 'error_labelling.jpg', dpi=400)
+    plt.savefig(running_settings.figures_parkapp + os.sep + 'error_'+method+'.jpg', dpi=400)
     plt.show()
 
 def parse_key(key: str):

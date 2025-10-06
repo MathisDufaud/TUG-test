@@ -1,12 +1,7 @@
-import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 import scipy.signal as signal
-import os
-import glob
-import datetime as dt
 
-from SaraFolder.settings import utils_functions
+from SaraFolder.settings.utils_parkaapp import utils_functions
 
 
 # find end of close to zero phase
@@ -253,13 +248,15 @@ def full_algo(df_start):
         t_new_end_der = df_test.at[new_end_der, 'relative_timestamp']
 
         # Do the same for the “all” signal (with stronger threshold).
-        new_start_all = find_zero_phase_end2(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
+        new_start_all = find_zero_phase_end2(
+            utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
         new_end_all = find_zero_phase_end_reverse2(utils_functions.moving_average(df_test['all']), 20, k=0.15)
         t_new_start_all = df_red.at[new_start_all, 'relative_timestamp']
         t_new_end_all = df_test.at[new_end_all, 'relative_timestamp']
 
         # Find first/last peaks in der_beta_gamma and rotRate_beta_gamma
-        start_beta_gamma = first_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
+        start_beta_gamma = first_peak(
+            utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
         end_beta_gamma = last_peak(utils_functions.moving_average(df_test['der_beta_gamma']))
         t_start_beta_gamma = df_red.at[start_beta_gamma, 'relative_timestamp']
         t_end_beta_gamma = df_test.at[end_beta_gamma, 'relative_timestamp']
@@ -269,8 +266,8 @@ def full_algo(df_start):
         t_end_rot = df_test.at[end_rot, 'relative_timestamp']
 
         # end of standing and start of sitting
-        end_stand_beta_gamma = last_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_beta_gamma, 'der_beta_gamma']),1)
-        start_sit_beta_gamma = first_peak(utils_functions.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']),1)
+        end_stand_beta_gamma = last_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_beta_gamma, 'der_beta_gamma']), 1)
+        start_sit_beta_gamma = first_peak(utils_functions.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']), 1)
         t_end_stand_beta_gamma = df_red.at[start_beta_gamma + end_stand_beta_gamma, 'relative_timestamp']
         t_start_sit_beta_gamma = df.at[start_turn2 + start_sit_beta_gamma, 'relative_timestamp']
 
@@ -288,17 +285,16 @@ def full_algo(df_start):
         return t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end
 
 
-def looping_tests(df_fusion):
-    # loop for all tests
-    algo_results = {}
+def looping_tests(all_tests):
     # TODO: keep track of what is not computed (missed turns, no data...)
-    for key, df_final in df_fusion.items():
-        result = full_algo(df_final)
+    for test in all_tests:
+        result = full_algo(test.raw_data)
+        test.results = {}
         if isinstance(result, str):
-            print(f"erreur avec {key} :", result)
+            print(f"erreur avec {test.test_id} :", result)
         else:
             t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
-            algo_results[key] = {
+            algo_results = {
                 "t_start": t_start,
                 "t_end_stand": t_end_stand,
                 "t_start_turn": t_start_turn,
@@ -308,5 +304,6 @@ def looping_tests(df_fusion):
                 "t_start_sit": t_start_sit,
                 "t_end": t_end
             }
-            print(f"Time for {key} :", t_end - t_start)
-    return algo_results
+            test.results['labelling'] = algo_results
+
+    return all_tests

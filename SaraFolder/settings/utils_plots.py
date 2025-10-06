@@ -118,25 +118,12 @@ def plot_tugtoverview(df_general):
 
     plt.tight_layout()
     plt.suptitle('')
-    plt.savefig(running_settings.figures_path + os.sep + 'tug_overview.jpg', dpi=400)
+    plt.savefig(running_settings.figures_parkapp + os.sep + 'tug_overview.jpg', dpi=400)
     plt.show()
 
     return None
 
-
-
 def plot_icc(icc_s, icctype='ICC2'):
-    """
-    Plot ICC values with confidence intervals for a specific ICC type across different configurations.
-
-    Parameters:
-    -----------
-    icc_s : dict
-        Dictionary containing ICC results for different configurations
-    icctype : str
-        Type of ICC to plot (default: 'ICC2')
-        Options: 'ICC1', 'ICC2', 'ICC3', 'ICC1k', 'ICC2k', 'ICC3k'
-    """
 
     # Extract data for the specified ICC type
     configurations = []
@@ -144,6 +131,8 @@ def plot_icc(icc_s, icctype='ICC2'):
     ci_lower = []
     ci_upper = []
     pvalues = []
+    num_tests = []
+    num_participants = []
 
     for config_name, df in icc_s.items():
         # Find the row with the specified ICC type
@@ -154,9 +143,20 @@ def plot_icc(icc_s, icctype='ICC2'):
             icc_values.append(icc_row['ICC'].iloc[0])
             pvalues.append(icc_row['pval'].iloc[0])
 
+            # Parse configuration name to extract numbers
+            # Expected format: 'numTests_pNumParticipants_sNumSamples'
+            # Example: '2_p26_s52' means 2 tests, 26 participants, 52 samples
+            match = re.match(r'(\d+)_p(\d+)', config_name)
+            if match:
+                num_tests.append(int(match.group(1)))
+                num_participants.append(int(match.group(2)))
+            else:
+                # Fallback if pattern doesn't match
+                num_tests.append(len(configurations))
+                num_participants.append(len(configurations))
+
             # Parse confidence interval
             ci_str = str(icc_row['CI95%'].iloc[0])
-            # Extract numbers from CI string like '[0.26, 0.78]'
             ci_nums = re.findall(r'[\d.]+', ci_str)
             if len(ci_nums) >= 2:
                 ci_lower.append(float(ci_nums[0]))
@@ -165,109 +165,167 @@ def plot_icc(icc_s, icctype='ICC2'):
                 ci_lower.append(icc_row['ICC'].iloc[0])
                 ci_upper.append(icc_row['ICC'].iloc[0])
 
-    # Create the plot
-    fig, ax = plt.subplots(figsize=(12, 8))
+    # Create figure with two subplots side by side
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
 
-    # Extract numbers from configuration names for x-axis (assuming format like '2_p26_s52')
-    x_labels = []
-    x_positions = []
-    for i, config in enumerate(configurations):
-        # Extract the first number from the configuration name
-        match = re.match(r'(\d+)', config)
-        if match:
-            x_labels.append(f"Config {match.group(1)}")
-            x_positions.append(int(match.group(1)))
-        else:
-            x_labels.append(config)
-            x_positions.append(i + 1)
+    fig, ax2 = plt.subplots(1, 1, figsize=(10, 6))
+    # =========================================================================
+    # SUBPLOT 1: ICC vs Number of Tests (Original Plot)
+    # =========================================================================
 
-    # Sort by x_positions to maintain order
-    sorted_indices = np.argsort(x_positions)
-    x_positions = [x_positions[i] for i in sorted_indices]
-    x_labels = [x_labels[i] for i in sorted_indices]
-    icc_values = [icc_values[i] for i in sorted_indices]
-    ci_lower = [ci_lower[i] for i in sorted_indices]
-    ci_upper = [ci_upper[i] for i in sorted_indices]
-    pvalues = [pvalues[i] for i in sorted_indices]
+    # Sort by number of tests
+    sorted_indices_tests = np.argsort(num_tests)
+    x_positions_tests = [num_tests[i] for i in sorted_indices_tests]
+    icc_sorted_tests = [icc_values[i] for i in sorted_indices_tests]
+    ci_lower_sorted_tests = [ci_lower[i] for i in sorted_indices_tests]
+    ci_upper_sorted_tests = [ci_upper[i] for i in sorted_indices_tests]
+    pvalues_sorted_tests = [pvalues[i] for i in sorted_indices_tests]
 
     # Calculate error bars
-    yerr_lower = [icc_values[i] - ci_lower[i] for i in range(len(icc_values))]
-    yerr_upper = [ci_upper[i] - icc_values[i] for i in range(len(icc_values))]
-    yerr = [yerr_lower, yerr_upper]
+    yerr_lower_tests = [icc_sorted_tests[i] - ci_lower_sorted_tests[i]
+                        for i in range(len(icc_sorted_tests))]
+    yerr_upper_tests = [ci_upper_sorted_tests[i] - icc_sorted_tests[i]
+                        for i in range(len(icc_sorted_tests))]
+    yerr_tests = [yerr_lower_tests, yerr_upper_tests]
 
     # Create color map based on p-values
-    colors = []
-    for pval in pvalues:
+    colors_tests = []
+    for pval in pvalues_sorted_tests:
         if pval < 0.001:
-            colors.append('darkgreen')
+            colors_tests.append('darkgreen')
         elif pval < 0.01:
-            colors.append('green')
+            colors_tests.append('green')
         elif pval < 0.05:
-            colors.append('orange')
+            colors_tests.append('orange')
         else:
-            colors.append('red')
+            colors_tests.append('red')
 
-    # Plot ICC values with error bars
-    bars = ax.bar(x_positions, icc_values,
-                  yerr=yerr, capsize=5, color=colors, alpha=0.7, edgecolor='black', linewidth=1)
+    # # Plot ICC values with error bars
+    # ax1.bar(x_positions_tests, icc_sorted_tests, yerr=yerr_tests,
+    #         capsize=5, color=colors_tests, alpha=0.7, edgecolor='black', linewidth=1)
+    #
+    # # Customize subplot 1
+    # ax1.set_xlabel('Number of Tests', fontsize=12, fontweight='bold')
+    # ax1.set_ylabel('ICC Value', fontsize=12, fontweight='bold')
+    # ax1.set_title(f'{icctype} vs Number of Tests\n95% Confidence Intervals',
+    #               fontsize=14, fontweight='bold', pad=20)
+    # ax1.grid(True, alpha=0.3, axis='y')
+    #
+    # # Add reference lines
+    # ax1.axhline(y=0.5, color='gray', linestyle='--', alpha=0.5, label='Poor (0.5)')
+    # ax1.axhline(y=0.75, color='gray', linestyle='--', alpha=0.5, label='Good (0.75)')
+    # ax1.axhline(y=0.9, color='gray', linestyle='--', alpha=0.5, label='Excellent (0.9)')
+    #
+    # # Add legend for p-values
+    # legend_elements = [
+    #     Rectangle((0, 0), 1, 1, facecolor='darkgreen', alpha=0.7, label='p < 0.001'),
+    #     Rectangle((0, 0), 1, 1, facecolor='green', alpha=0.7, label='p < 0.01'),
+    #     Rectangle((0, 0), 1, 1, facecolor='orange', alpha=0.7, label='p < 0.05'),
+    #     Rectangle((0, 0), 1, 1, facecolor='red', alpha=0.7, label='p ≥ 0.05')
+    # ]
+    # legend1 = ax1.legend(handles=legend_elements, loc='upper left',
+    #                      title='Significance Level', framealpha=0.9)
+    #
+    # # Add value annotations
+    # for i, (pos, val) in enumerate(zip(x_positions_tests, icc_sorted_tests)):
+    #     ax1.text(pos, val + 0.02, f'{val:.3f}',
+    #              ha='center', va='bottom', fontsize=9, fontweight='bold')
+    #
+    # Set y-axis limits
+    y_min = max(0, min(ci_lower) - 0.1)
+    y_max = min(max(ci_upper_sorted_tests) + 0.15, 1.0)
 
-    # Customize the plot
-    ax.set_xlabel('Configuration', fontsize=12, fontweight='bold')
-    ax.set_ylabel('ICC Value', fontsize=12, fontweight='bold')
-    ax.set_title(f'{icctype} Values with 95% Confidence Intervals',
-                 fontsize=14, fontweight='bold', pad=20)
+    # =========================================================================
+    # SUBPLOT 2: ICC vs Number of Participants (colored by # tests)
+    # =========================================================================
 
-    # Set x-axis
-    ax.set_xticks(x_positions)
-    ax.set_xticklabels(x_labels, rotation=45, ha='right')
+    # Group data by number of tests for different colors
+    unique_tests = sorted(set(num_tests))
 
-    # Add grid
-    ax.grid(True, alpha=0.3, axis='y')
+    # Create color palette for different test numbers
+    colormap = plt.cm.get_cmap('Set2', len(unique_tests))
+    test_colors = {test: colormap(i) for i, test in enumerate(unique_tests)}
 
-    # Add horizontal line for different ICC interpretation levels
-    ax.axhline(y=0.5, color='gray', linestyle='--', alpha=0.5, label='Poor (0.5)')
-    ax.axhline(y=0.75, color='gray', linestyle='--', alpha=0.5, label='Good (0.75)')
-    ax.axhline(y=0.9, color='gray', linestyle='--', alpha=0.5, label='Excellent (0.9)')
+    # Sort by number of participants
+    sorted_indices_parts = np.argsort(num_participants)
+    x_positions_parts = [num_participants[i] for i in sorted_indices_parts]
+    icc_sorted_parts = [icc_values[i] for i in sorted_indices_parts]
+    ci_lower_sorted_parts = [ci_lower[i] for i in sorted_indices_parts]
+    ci_upper_sorted_parts = [ci_upper[i] for i in sorted_indices_parts]
+    tests_sorted = [num_tests[i] for i in sorted_indices_parts]
 
-    # Create legend for p-value colors
-    legend_elements = [
-        Rectangle((0, 0), 1, 1, facecolor='darkgreen', alpha=0.7, label='p < 0.001'),
-        Rectangle((0, 0), 1, 1, facecolor='green', alpha=0.7, label='p < 0.01'),
-        Rectangle((0, 0), 1, 1, facecolor='orange', alpha=0.7, label='p < 0.05'),
-        Rectangle((0, 0), 1, 1, facecolor='red', alpha=0.7, label='p ≥ 0.05')
-    ]
+    # Plot each point with error bars
+    for i in range(len(x_positions_parts)):
+        x = x_positions_parts[i]
+        y = icc_sorted_parts[i]
+        yerr_low = y - ci_lower_sorted_parts[i]
+        yerr_up = ci_upper_sorted_parts[i] - y
+        n_test = tests_sorted[i]
+        color = test_colors[n_test]
 
-    # Add legends
-    legend1 = ax.legend(handles=legend_elements, loc='upper left',
-                        title='Significance Level', framealpha=0.9)
-    ax.add_artist(legend1)
+        # Plot point with error bar
+        ax2.errorbar(x, y, yerr=[[yerr_low], [yerr_up]],
+                     fmt='o', markersize=10, color=color,
+                     capsize=5, capthick=2, alpha=0.8,
+                     label=f'{n_test} tests' if i == 0 or tests_sorted[i] != tests_sorted[i - 1] else "")
 
-    # Add text annotations for ICC values
-    for i, (pos, val, pval) in enumerate(zip(x_positions, icc_values, pvalues)):
-        ax.text(pos, val + 0.02, f'{val:.3f}',
-                ha='center', va='bottom', fontsize=9, fontweight='bold')
-        ax.text(pos, val - 0.05, f'p={pval:.2e}' if pval < 0.001 else f'p={pval:.3f}',
-                ha='center', va='top', fontsize=8, style='italic')
+    # Connect points with same number of tests
+    for test_num in unique_tests:
+        # Get all points with this test number
+        indices = [i for i, t in enumerate(tests_sorted) if t == test_num]
+        if len(indices) > 1:
+            x_vals = [x_positions_parts[i] for i in indices]
+            y_vals = [icc_sorted_parts[i] for i in indices]
+            # Sort by x for proper line connection
+            sorted_pairs = sorted(zip(x_vals, y_vals))
+            x_vals, y_vals = zip(*sorted_pairs)
+            ax2.plot(x_vals, y_vals, '--', color=test_colors[test_num],
+                     alpha=0.4, linewidth=1.5)
+
+    # Customize subplot 2
+    ax2.set_xlabel('Number of Participants', fontsize=12)
+    ax2.set_ylabel('ICC Value', fontsize=12)
+    ax2.set_title(f'{icctype} vs Number of Participants\n95% Confidence Intervals',
+                  fontsize=12, pad=20)
+    ax2.grid(True, alpha=0.3)
+
+    # Add reference lines
+    ax2.axhline(y=0.5, color='gray', linestyle='--', alpha=0.5)
+    ax2.axhline(y=0.75, color='gray', linestyle='--', alpha=0.5)
+    ax2.axhline(y=0.9, color='gray', linestyle='--', alpha=0.5)
+
+    # Create legend for number of tests
+    handles, labels = ax2.get_legend_handles_labels()
+    # Remove duplicates while preserving order
+    by_label = dict(zip(labels, handles))
+    ax2.legend(by_label.values(), by_label.keys(),
+               loc='best', title='Number of Tests', framealpha=0.9)
+
+    # Add value annotations
+    for i, (x, y) in enumerate(zip(x_positions_parts, icc_sorted_parts)):
+        ax2.text(x, y + 0.02, f'{y:.3f}',
+                 ha='center', va='bottom', fontsize=8, fontweight='bold')
 
     # Set y-axis limits
-    y_min = min(ci_lower) - 0.1
-    y_max = min(max(ci_upper) + 0.15, 1.0)
-    ax.set_ylim(y_min, y_max)
+    ax2.set_ylim(y_min, y_max)
 
     # Adjust layout
     plt.tight_layout()
-
-    # Show plot
+    plt.savefig(running_settings.figures_parkapp + os.sep + 'icc.jpg', dpi=400)
     plt.show()
 
-    # Print summary statistics
-    print(f"\n{icctype} Summary Statistics:")
-    print("=" * 40)
-    print(f"Mean ICC: {np.mean(icc_values):.3f}")
-    print(f"Std ICC: {np.std(icc_values):.3f}")
-    print(f"Min ICC: {np.min(icc_values):.3f}")
-    print(f"Max ICC: {np.max(icc_values):.3f}")
-    print(f"Configurations with ICC > 0.75: {sum(1 for x in icc_values if x > 0.75)}/{len(icc_values)}")
-    print(f"Configurations with ICC > 0.9: {sum(1 for x in icc_values if x > 0.9)}/{len(icc_values)}")
+    # =========================================================================
+    # Print Summary Statistics
+    # =========================================================================
 
-    return fig, ax
+    print(f"\n{icctype} Summary Statistics:")
+    print("=" * 60)
+    print(f"Mean ICC: {np.mean(icc_values):.3f} ± {np.std(icc_values):.3f}")
+    print(f"Range: [{np.min(icc_values):.3f}, {np.max(icc_values):.3f}]")
+    print(f"\nNumber of Tests Range: {min(num_tests)} - {max(num_tests)}")
+    print(f"Number of Participants Range: {min(num_participants)} - {max(num_participants)}")
+    print("\nConfigurations tested:")
+    for config, icc, pval, n_test, n_part in zip(configurations, icc_values,
+                                                 pvalues, num_tests, num_participants):
+        print(f"  {config}: ICC={icc:.3f}, p={pval:.4f}, "
+              f"Tests={n_test}, Participants={n_part}")

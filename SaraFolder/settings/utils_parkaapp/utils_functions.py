@@ -10,8 +10,10 @@ import pickle
 from matplotlib import pyplot as plt
 
 from SaraFolder.settings import running_settings, classes, utils_plots
+from SaraFolder.settings.utils_pisa import utils_pisatugloaders
+from SaraFolder.settings.utils_synergy import utils_synloaders
 
-base_path = running_settings.data_path
+base_path = running_settings.data_parkapp
 
 
 def ready_df():
@@ -253,14 +255,15 @@ def load_groundtruth_dict():
     return dict_times
 
 
-def build_general_df(df_fusion, df_gt_dict):
+def build_general_df(all_tests):
     df_general = pd.DataFrame(columns=['Participant', 'Session', 'samples', 'duration', 'durationGT'])
-    for key, df in df_fusion.items():
-        participant = key.split('_')[0]
-        session = key.split('_')[1]
-        n_samples = len(df)
+    for test in all_tests:
+        participant = test.user_id
+        session = test.session_id
+        n_samples = len(test.raw_data)
+        df = test.raw_data
         duration = (df['msFromStart'].iloc[-1] - df['msFromStart'].iloc[0]) / 1000
-        durationGT = df_gt_dict[key[:-2]]['t_end'] - df_gt_dict[key[:-2]]['t_start']
+        durationGT = test.gt_total
         df_general = pd.concat([df_general, pd.DataFrame({'Participant': [participant],
                                                           'Session': [session],
                                                           'samples': [n_samples],
@@ -269,34 +272,34 @@ def build_general_df(df_fusion, df_gt_dict):
     return df_general
 
 
-def tugt_overview(df_fusion, df_gt_dict):
+def tugt_overview(all_tests):
     skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
 
-    df_general = build_general_df(df_fusion, df_gt_dict)
+    df_general = build_general_df(all_tests)
 
     utils_plots.plot_tugtoverview(df_general)
 
     lg = classes.Logger(running_settings.results_path + os.sep + running_settings.tugt_overview)
     sys.stdout = lg
 
-    print("Original amount of tests: ", len(df_fusion) + len(skipped))
-    print("\nSkipped tests for various reasons: ", len(skipped))
-    print("\nRemaining tests for analysis: ", len(df_fusion))
-    print("\n# Participants: ", df_general['Participant'].nunique())
-    print("\nAverage frequency (Hz) samples/seconds: ",
+    print("Original amount of tests: ", len(all_tests) + len(skipped))
+    print("Skipped tests for various reasons: ", len(skipped))
+    print("Remaining tests for analysis: ", len(all_tests))
+    print("# Participants: ", df_general['Participant'].nunique())
+    print("Average frequency (Hz) samples/seconds: ",
           round((df_general['samples'] / df_general['duration']).mean(), 2))
-    print("\nAverage # test per participant: ", df_general.groupby('Participant').size().mean())
-    print("\nMin # test per participant: ", df_general.groupby('Participant').size().min())
-    print("\nMax # test per participant: ", df_general.groupby('Participant').size().max())
-    print("\nStd # test per participant: ", round(df_general.groupby('Participant').size().std(), 2))
-    print("\nAverage test duration (s) (raw): ", round(df_general['duration'].mean(), 2))
-    print("\nMin test duration (s) (raw): ", round(df_general['duration'].min(), 2))
-    print("\nMax test duration (s) (raw): ", round(df_general['duration'].max(), 2))
-    print("\nStd test duration (s) (raw): ", round(df_general['duration'].std(), 2))
-    print("\nAverage test duration (s) (GT): ", round(df_general['durationGT'].mean(), 2))
-    print("\nMin test duration (s) (GT): ", round(df_general['durationGT'].min(), 2))
-    print("\nMax test duration (s) (GT): ", round(df_general['durationGT'].max(), 2))
-    print("\nStd test duration (s) (GT): ", round(df_general['durationGT'].std(), 2))
+    print("Average # test per participant: ", df_general.groupby('Participant').size().mean())
+    print("Min # test per participant: ", df_general.groupby('Participant').size().min())
+    print("Max # test per participant: ", df_general.groupby('Participant').size().max())
+    print("Std # test per participant: ", round(df_general.groupby('Participant').size().std(), 2))
+    print("Average test duration (s) (raw): ", round(df_general['duration'].mean(), 2))
+    print("Min test duration (s) (raw): ", round(df_general['duration'].min(), 2))
+    print("Max test duration (s) (raw): ", round(df_general['duration'].max(), 2))
+    print("Std test duration (s) (raw): ", round(df_general['duration'].std(), 2))
+    print("Average test duration (s) (GT): ", round(df_general['durationGT'].mean(), 2))
+    print("Min test duration (s) (GT): ", round(df_general['durationGT'].min(), 2))
+    print("Max test duration (s) (GT): ", round(df_general['durationGT'].max(), 2))
+    print("Std test duration (s) (GT): ", round(df_general['durationGT'].std(), 2))
 
     lg.stop_logging()
     sys.stdout = sys.__stdout__
@@ -336,8 +339,8 @@ def compute_df_filtered(s, df_general):
     return df_filtered
 
 
-def tugt_icc(df_fusion, df_gt_dict):
-    df_general = build_general_df(df_fusion, df_gt_dict)
+def tugt_icc(all_tests):
+    df_general = build_general_df(all_tests)
     # Columns participant and sessions are numbers but are now treated as string, I want them to be int
     df_general['Participant'] = df_general['Participant'].astype(int)
     df_general['Session'] = df_general['Session'].astype(int)
@@ -368,3 +371,52 @@ def tugt_icc(df_fusion, df_gt_dict):
         print("\n")
 
     return icc_s
+
+
+def set_up_tests(df_fusion, df_gt_dict, dataset_id='parkaapp'):
+    all_tests = []
+    for i, (k, t) in enumerate(df_fusion.items()):
+        gt_dict = df_gt_dict[k[:-2]]
+        gt_phases = classes.TUGPhases(
+            t_start = gt_dict['t_start'],
+            t_end_stand = gt_dict['t_end_stand'],
+            t_start_turn = gt_dict['t_start_turn'],
+            t_end_turn = gt_dict['t_end_turn'],
+            t_start_turn2 = gt_dict['t_start_turn2'],
+            t_start_sit = gt_dict['t_start_sit'],
+            t_end = gt_dict['t_end']
+        )
+
+        test = classes.TUGTest(test_id=i,
+                               user_id=k.split('_')[0],
+                               session_id=k.split('_')[1],
+                               dataset_id=dataset_id,
+                               gt_total= gt_dict['t_end'] - gt_dict['t_start'],
+                               gt_phases=gt_phases
+                               )
+        test.created_on = None
+        test.wearing_position = 'waist-pouch'
+        test.smartphone_info = None
+        test.context = 'supervised' if k[-1] == 's' else 'unsupervised'
+        test.raw_data = t
+
+        all_tests.append(test)
+
+    return all_tests
+
+
+def load_all_tests(dataset_id):
+
+    if dataset_id == 'parkapp':
+        df_fusion = ready_df()
+        # df_gt = load_groundtruth_samplepersample(df_fusion)
+        df_gt_dict = load_groundtruth_dict()
+
+        all_tests = set_up_tests(df_fusion, df_gt_dict, dataset_id = dataset_id)
+
+    elif dataset_id == 'synergy':
+        all_tests = utils_synloaders.load_syntests(dataset_id = dataset_id)
+    elif dataset_id == 'pisatug':
+        all_tests = utils_pisatugloaders.load_pisatugtests(dataset_id = dataset_id)
+
+    return all_tests
