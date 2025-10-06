@@ -59,14 +59,14 @@ def find_zero_phase_end_reverse(data, min_duration=30):
 def start_change(base_data, window_size=100, threshold=120):
     data = np.array(base_data)
     detected_segments = []
-
+    # Window size starts at 100 (approx 1.7 seconds at 60Hz)
     i = 0
     while i <= len(data) - window_size:
         window = data[i:i + window_size]
         amplitude = np.max(window) - np.min(window)
 
         if amplitude >= threshold:
-            center = i + int(window_size * 0.5)
+            center = i + window_size // 2
 
             # going left from center
             start = center
@@ -105,17 +105,31 @@ def start_change(base_data, window_size=100, threshold=120):
     return start_change(base_data, window_size=window_size+10, threshold=threshold-10)
 
 def find_zero_phase_end2(data, min_duration=30,k=0.05):
+    """
+    Find the end index of a phase where the signal (DERIVATIVE!) is close to zero for at least `min_duration` samples.
+    Args:
+        data: Derivative signal.
+        min_duration: Minimum duration (in samples) of the near-zero phase to be considered valid.
+        k: Threshold factor to determine "close to zero" based on the data's amplitude.
+    Returns:
+        The end index of the near-zero phase. If no such phase is found, returns 0.
+    """
     end_index = 0
 
     data = np.array(data)
+    # Compute a dynamic threshold = fraction k of the signal’s amplitude range.
     threshold = (np.max(data)-np.min(data)) * k
+
+    # Boolean mask: True where the signal is close to zero.
     near_zero = np.abs(data) < threshold
 
     enum_data = tuple(enumerate(near_zero))
     reverse_data = reversed(enum_data)
 
-    count = 0
+    count = 0  # keeps track of consecutive near-zero samples
 
+    # Finding near-zero regions end index
+    # If streak length ≥ min_duration, return the end index of that near-zero region
     for i, is_near in reverse_data:
         if is_near and i!=0:
             count += 1
@@ -127,7 +141,7 @@ def find_zero_phase_end2(data, min_duration=30,k=0.05):
 
     return end_index
 
-def find_zero_phase_end_reverse2(data, min_duration=30,k=0.04):
+def find_zero_phase_end_reverse2(data, min_duration=30, k=0.04):
 
     data = np.array(data)
     end_index = len(data)-1
@@ -198,8 +212,9 @@ def full_algo(df_start):
         return "empty df after removing 3 sec"
 
     df.reset_index(drop=True, inplace=True)
+    print("FS: ", np.round(df.shape[0] /((df.iloc[-1, 0] - df.iloc[0,0])/1000), 2))
 
-    # find the 2 turns
+    # find the 2 turns. 20 samples correspond approx to 1/3 seconds
     alpha_ma = utils_functions.moving_average(df['alpha'], 20)
 
     result = start_change(alpha_ma)
@@ -223,27 +238,31 @@ def full_algo(df_start):
 
         df_red.reset_index(drop=True, inplace=True)
 
+        # Subset after second turn end
         df_test = df_red.loc[(df_red['relative_timestamp'] >= t_end_turn2 - 1)].copy()
         if df_test.empty:
             return "df_test empty"
 
         df_test.reset_index(drop=True, inplace=True)
 
+        # --- Detect zero-phase regions (derivative & all) ---
+        # Finding index before first turn and after the last turn
         new_start_der = find_zero_phase_end2(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'derivative'])
-        new_end_der = find_zero_phase_end_reverse2(df_test['derivative'], 20)
+        new_end_der = find_zero_phase_end_reverse2(df_test['derivative'], 20) # Similar to previous, but scans forward instead of backward.
         t_new_start_der = df_red.at[new_start_der, 'relative_timestamp']
         t_new_end_der = df_test.at[new_end_der, 'relative_timestamp']
 
+        # Do the same for the “all” signal (with stronger threshold).
         new_start_all = find_zero_phase_end2(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
         new_end_all = find_zero_phase_end_reverse2(utils_functions.moving_average(df_test['all']), 20, k=0.15)
         t_new_start_all = df_red.at[new_start_all, 'relative_timestamp']
         t_new_end_all = df_test.at[new_end_all, 'relative_timestamp']
 
+        # Find first/last peaks in der_beta_gamma and rotRate_beta_gamma
         start_beta_gamma = first_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
         end_beta_gamma = last_peak(utils_functions.moving_average(df_test['der_beta_gamma']))
         t_start_beta_gamma = df_red.at[start_beta_gamma, 'relative_timestamp']
         t_end_beta_gamma = df_test.at[end_beta_gamma, 'relative_timestamp']
-
         start_rot = first_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'rotRate_beta_gamma']), 75)
         end_rot = last_peak(utils_functions.moving_average(df_test['rotRate_beta_gamma']), 75)
         t_start_rot = df_red.at[start_rot, 'relative_timestamp']

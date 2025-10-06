@@ -10,3 +10,19 @@ tugt_overview = "tugt_overview.txt"
 
 load_existing_model = True
 phases_to_consider = 1 # 1: tugt
+
+param_labelling_algo = {
+    'thresh_amplitude': 120,     # amplitude
+    'thresh_neighbors': 0.3,     # amplitude
+    'thresh_turn_duration': 50,  # samples - approx 0.8 seconds
+    'window_size': 100,          # samples - approx 1.7 seconds
+    'ma_window': 20,             # samples - approx 1/3 seconds
+    'k_reverse2': 0.04,
+    'min_duration_reverse2':30,  # samples - approx 0.5 seconds
+    'k_end2': 0.05,
+    'minduration_end2':30,       # samples - approx 0.5 seconds
+    'k_all': 0.15,
+    'thresh_firstpeak': 1.5,
+    'thresh_lastpeak': 1.2,
+    'thresh_peak_rotbetagamma': 70,
+}

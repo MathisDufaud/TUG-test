@@ -10,7 +10,7 @@ if __name__ == "__main__":
     gt_dict = utils_functions.load_groundtruth_dict()
 
     # Example with one test:
-    if False:
+    if True:
         df_plot = df_fusion[list(df_fusion.keys())[5]]
         res = utils_labelling.full_algo(df_plot)
         utils_plots.plot_labelling_tug(df_plot, res)
