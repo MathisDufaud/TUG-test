@@ -1,2 +1,358 @@
+import pandas as pd
+import numpy as np
+import os
+
+from matplotlib import pyplot as plt
+
+from SaraFolder.settings import running_settings, classes, utils_plots
+
 def load_pisatugtests(dataset_id):
+    return None
+
+
+# def load_ref_data():
+#     tug_refs = pd.read_csv(data_path + os.sep + "tugs.csv")
+#
+#     df_tugs = tug_refs[["userKey", "tugTimeMs", "GWALKReferenceMs", "manualRefStartMs", "manualRefEndtMs", "homeClinic"]]
+#     # df_tug_home = df_tugs[df_tugs["homeClinic"] == "home"].drop(columns=["homeClinic", "manualRefStartMs", "manualRefEndtMs", "GWALKReferenceMs"]).sort_values(by=["userKey"]) ######### ONLY HOME TESTS
+#
+#     # df_tug considering all userKey with value > 1000
+#     # ALL THE SWEDISH
+#     df_tug_home = df_tugs[df_tugs["userKey"] > 1000].drop(columns=["homeClinic", "manualRefStartMs", "manualRefEndtMs", "GWALKReferenceMs"]).sort_values(by=["userKey"])
+#
+#     # New columns test_iteration: add 0,1,2,3 to each row according to the userKey
+#     df_tug_home["test_iteration"] = df_tug_home.groupby("userKey").cumcount()
+#
+#     return df_tug_home
+
+
+def plot_reliability_results(results_dict=None, save_plots=False, title='', figsize=(15, 10)):
+    """
+    Create comprehensive visualizations for test-retest reliability results
+    """
+
+    # Extract data for plotting
+    results_data = {
+        'n_tests': [],
+        'n_userKeys': [],
+        'n_observations': [],
+        'icc': [],
+        'ci_lower': [],
+        'ci_upper': []
+    }
+
+    # Sort by number of tests
+    sorted_keys = sorted(results_dict.keys(), key=lambda x: results_dict[x]['n_tests'])
+
+    for key in sorted_keys:
+        data = results_dict[key]
+        results_data['n_tests'].append(data['n_tests'])
+        results_data['n_userKeys'].append(data['n_userKeys'])
+        results_data['n_observations'].append(data['n_observations'])
+        results_data['icc'].append(float(data['value']))
+        results_data['ci_lower'].append(float(data['ci_lower']))
+        results_data['ci_upper'].append(float(data['ci_upper']))
+
+    # Create figure with subplots
+    fig = plt.figure(figsize=figsize)
+
+    # Define reliability interpretation colors
+    def get_reliability_color(icc_value):
+        if icc_value < 0.5:
+            return '#ff6b6b'  # Poor (red)
+        elif icc_value < 0.75:
+            return '#4ecdc4'  # Moderate (teal)
+        else:
+            return '#45b7d1'  # Good (blue)
+
+    # Plot 1: ICC with Confidence Intervals
+    ax1 = plt.subplot(2, 3, 1)
+    x_pos = np.arange(len(results_data['n_tests']))
+    colors = [get_reliability_color(icc) for icc in results_data['icc']]
+
+    # Plot ICC points
+    bars = ax1.bar(x_pos, results_data['icc'], color=colors, alpha=0.7,
+                   edgecolor='black', linewidth=1)
+
+    # Add confidence intervals
+    ci_heights = np.array(results_data['ci_upper']) - np.array(results_data['ci_lower'])
+    ax1.errorbar(x_pos, results_data['icc'],
+                 yerr=[np.array(results_data['icc']) - np.array(results_data['ci_lower']),
+                       np.array(results_data['ci_upper']) - np.array(results_data['icc'])],
+                 fmt='none', color='black', capsize=5, capthick=2)
+
+    ax1.set_xlabel('Number of Tests per Participant')
+    ax1.set_ylabel('ICC(2,1)')
+    ax1.set_title('Test-Retest Reliability by Number of Tests')
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(results_data['n_tests'])
+    ax1.grid(True, alpha=0.3)
+
+    # Add reliability interpretation zones
+    ax1.axhspan(0, 0.5, alpha=0.1, color='red', label='Poor (<0.5)')
+    ax1.axhspan(0.5, 0.75, alpha=0.1, color='orange', label='Moderate (0.5-0.75)')
+    ax1.axhspan(0.75, 1.0, alpha=0.1, color='green', label='Good (>0.75)')
+
+    # Plot 2: Sample Sizes
+    ax2 = plt.subplot(2, 3, 2)
+    bars2 = ax2.bar(x_pos, results_data['n_userKeys'], color='skyblue',
+                    alpha=0.7, edgecolor='black', linewidth=1)
+
+    ax2.set_xlabel('Number of Tests per Participant')
+    ax2.set_ylabel('Number of userKeys')
+    ax2.set_title('Sample Size by Test Count')
+    ax2.set_xticks(x_pos)
+    ax2.set_xticklabels(results_data['n_tests'])
+    ax2.grid(True, alpha=0.3)
+
+    # Plot 3: Confidence Interval Widths
+    ax3 = plt.subplot(2, 3, 3)
+    ci_widths = np.array(results_data['ci_upper']) - np.array(results_data['ci_lower'])
+    bars3 = ax3.bar(x_pos, ci_widths, color='lightcoral', alpha=0.7,
+                    edgecolor='black', linewidth=1)
+
+    # Add value labels
+    for bar, width in zip(bars3, ci_widths):
+        ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
+                 f'{width:.3f}', ha='center', va='bottom')
+
+    ax3.set_xlabel('Number of Tests per Participant')
+    ax3.set_ylabel('95% CI Width')
+    ax3.set_title('Precision of ICC Estimates')
+    ax3.set_xticks(x_pos)
+    ax3.set_xticklabels(results_data['n_tests'])
+    ax3.grid(True, alpha=0.3)
+
+    # Plot 4: ICC vs Sample Size Relationship
+    ax4 = plt.subplot(2, 3, 4)
+    scatter = ax4.scatter(results_data['n_userKeys'], results_data['icc'],
+                          c=results_data['n_tests'], s=100, cmap='viridis',
+                          alpha=0.7, edgecolors='black', linewidth=2)
+
+    # Add labels for each point
+    for i, n_test in enumerate(results_data['n_tests']):
+        ax4.annotate(f'{n_test} tests',
+                     (results_data['n_userKeys'][i], results_data['icc'][i]),
+                     xytext=(5, 5), textcoords='offset points', fontsize=10)
+
+    ax4.set_xlabel('Number of userKeys')
+    ax4.set_ylabel('ICC(2,1)')
+    ax4.set_title('Reliability vs Sample Size')
+    ax4.grid(True, alpha=0.3)
+
+    # Add colorbar
+    cbar = plt.colorbar(scatter, ax=ax4)
+    cbar.set_label('Number of Tests')
+
+    # Plot 5: Comprehensive Summary Table
+    ax5 = plt.subplot(2, 3, 5)
+    ax5.axis('off')
+
+    # Create summary table
+    table_data = []
+    for i in range(len(results_data['n_tests'])):
+        reliability_level = "Poor" if results_data['icc'][i] < 0.5 else \
+            "Moderate" if results_data['icc'][i] < 0.75 else "Good"
+
+        table_data.append([
+            f"{results_data['n_tests'][i]} tests",
+            f"{results_data['n_userKeys'][i]}",
+            f"{results_data['icc'][i]:.3f}",
+            f"[{results_data['ci_lower'][i]:.3f}, {results_data['ci_upper'][i]:.3f}]",
+            reliability_level
+        ])
+
+    table = ax5.table(cellText=table_data,
+                      colLabels=['Test Count', 'N', 'ICC(2,1)', '95% CI', 'Level'],
+                      cellLoc='center',
+                      loc='center',
+                      colColours=['lightgray'] * 5)
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 2)
+    ax5.set_title('Summary Table', pad=20)
+
+    # Plot 6: Error Bar Plot with Trends
+    ax6 = plt.subplot(2, 3, 6)
+
+    # Plot ICC with error bars
+    ax6.errorbar(results_data['n_tests'], results_data['icc'],
+                 yerr=[np.array(results_data['icc']) - np.array(results_data['ci_lower']),
+                       np.array(results_data['ci_upper']) - np.array(results_data['icc'])],
+                 fmt='o-', capsize=5, capthick=2, linewidth=2, markersize=8,
+                 color='darkblue', ecolor='darkblue', alpha=0.8)
+
+    # Add reliability zones
+    ax6.axhspan(0, 0.5, alpha=0.1, color='red')
+    ax6.axhspan(0.5, 0.75, alpha=0.1, color='orange')
+    ax6.axhspan(0.75, 1.0, alpha=0.1, color='green')
+
+    ax6.set_xlabel('Number of Tests per Participant')
+    ax6.set_ylabel('ICC(2,1)')
+    ax6.set_title('Reliability Trend Across Test Counts')
+    ax6.grid(True, alpha=0.3)
+
+    # Add horizontal lines for reference
+    ax6.axhline(y=0.5, color='red', linestyle='--', alpha=0.5, label='Poor/Moderate threshold')
+    ax6.axhline(y=0.75, color='green', linestyle='--', alpha=0.5, label='Moderate/Good threshold')
+    ax6.legend(fontsize=8)
+
+    plt.tight_layout()
+
+    if save_plots:
+        plt.savefig(figures_path + os.sep + title, dpi=400, bbox_inches='tight')
+        print("Plot saved")
+
+    plt.show()
+
+    return fig
+
+def compute_test_retest_reliability(df, min_tests=2, method='icc', verbose=True):
+    """
+    Compute test-retest reliability for userKeys with varying number of tests
+
+    Returns:
+    --------
+    dict : Results dictionary containing ICC
+    """
+
+    if verbose:
+        print(f"{len(df)} total observations from {df['userKey'].nunique()} userKeys \n")
+
+    results = {}
+    for n_tests in [2, 3, 4, 5, 6]:
+        userKey_counts = df.groupby('userKey').size()
+        valid_userKeys = userKey_counts[userKey_counts >= n_tests].index
+
+        # Step 3: Limit to max_tests test_iterations per userKey (keep first max_tests test_iterations)
+        max_tests = n_tests
+        if max_tests is not None:
+            filtered_rows = []
+            for pid in valid_userKeys:
+                userKey_data = df[df['userKey'] == pid].sort_values('test_iteration')
+                # Keep only the first max_tests test_iterations
+                limited_data = userKey_data.head(max_tests)
+                filtered_rows.append(limited_data)
+            df_filtered = pd.concat(filtered_rows, ignore_index=True)
+
+        if len(valid_userKeys) < 2:
+            raise ValueError("Need at least 2 userKeys for reliability analysis")
+
+        # Method 1: ICC Analysis (uses all available data points)
+        if method in ['icc', 'both']:
+            try:
+                # For ICC, we can use all available test_iterations
+                df_icc = df_filtered.copy()
+
+                icc_result = intraclass_corr(
+                    data=df_icc,
+                    targets='userKey',
+                    raters='test_iteration',
+                    ratings='tugTimeMs'
+                )
+
+                # Extract ICC(2,1) - Two-way random effects, single measurement, absolute agreement
+                icc = icc_result[icc_result['Type'] == 'ICC3'] # or ICC3
+
+                if not icc.empty:
+                    results['ICC_'+str(n_tests)] = {
+                        'type': icc_result['Type'],
+                        'value': icc['ICC'].iloc[0],
+                        'ci_lower': icc['CI95%'].iloc[0][0],
+                        'ci_upper': icc['CI95%'].iloc[0][1],
+                        'n_userKeys': len(valid_userKeys),
+                        'n_observations': len(df_icc),
+                        'n_tests': n_tests
+                    }
+
+                    if verbose:
+                        print(f"\n Results for {n_tests} tests and {len(valid_userKeys)} participants:")
+                        print(f"ICC = {results['ICC_'+str(n_tests)]['value']:.3f}")
+                        print(f"95% CI: [{results['ICC_'+str(n_tests)]['ci_lower']:.3f}, {results['ICC_'+str(n_tests)]['ci_upper']:.3f}]")
+
+            except Exception as e:
+                if verbose:
+                    print(f"ICC calculation failed: {str(e)}")
+    return results
+
+
+def icc_analysis(tug_ref_data, title):
+
+    results = compute_test_retest_reliability(
+        tug_ref_data,
+        min_tests=2,
+        method='icc',
+        verbose=True
+    )
+
+    plot_reliability_results(results, save_plots=True, title=title)  # Using your actual results dictionary
+
+    return None
+
+
+def load_json_data():
+    # JSON: % FOR ICC, USE THE FOLLOWING: each number is a subject, numbers in the array are measurements in ms
+
+    json_data = {"1": [5950], "2": [27599, 19432, 22749, 22433],
+                 "3": [8516, 8667, 6899, 7800, 8149, 6582, 7966],
+                 "4": [4167, 9167, 8300, 8033, 7450], "5": [8583, 7850],
+                 "6": [5283, 5052, 4741, 5483, 5900, 5233],
+                 "7": [9634, 9583, 9967, 10666, 9783, 14066],
+                 "8": [8716, 8716, 7984, 7649, 7817, 7150],
+                 "9": [8750, 8833, 9866, 10199, 11049, 9650]}
+
+    tug_df = pd.DataFrame()
+    c=0
+    for user_key, measurements in json_data.items():
+        for i, measurement in enumerate(measurements):
+            tug_df = pd.concat([tug_df, pd.DataFrame(data={
+                "userKey": int(user_key),
+                "tugTimeMs": measurement,
+                "test_iteration": i}, index=[c])])
+            c+=1
+
+    return tug_df
+
+
+def load_test(path, test_id):
+    tests = []
+    participant = path.split(os.sep)[-1].split("_")[1]
+    unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in os.listdir(path) if f.endswith(".csv")])
+    for i, t in enumerate(unique_tests):
+        test_id += 1
+        motion = path + os.sep + 'tug' + t + '_motion.csv'
+        orientation = path + os.sep + 'tug' + t + '_orientation.csv'
+
+        if os.path.exists(motion) and os.path.exists(orientation):
+            test = classes.TUGTest(test_id=test_id,
+                                   session_id=int(t),
+                                   user_id=int(participant),
+                                   dataset_id="synergy")
+
+            df_motion = pd.read_csv(motion)
+            df_orientation = pd.read_csv(orientation)
+
+            # Merge on timestamp column
+            df_motion = df_motion.sort_values('msFromStart')
+            df_orientation = df_orientation.sort_values('msFromStart')
+
+            df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
+
+            test.raw_data = df_merged
+
+            tests.append(df_merged)
+
+    return tests, test_id
+
+
+def load_pisatests():
+    all_tests = []
+    test_id = running_settings.test_id_start_synergy
+    data_path = running_settings.data_synpisa
+    for t in os.listdir(data_path):
+        if os.path.isdir(data_path + os.sep + t) and t.startswith("p"):
+            tests, test_id = load_test(data_path + os.sep + t, test_id)
+            all_tests.extend(tests)
+
     return None

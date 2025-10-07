@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.signal as signal
 
-from SaraFolder.settings.utils_parkaapp import utils_functions
+from SaraFolder.settings.utils_parkaapp import utils_parkapp
 
 
 # find end of close to zero phase
@@ -210,7 +210,7 @@ def full_algo(df_start):
     print("FS: ", np.round(df.shape[0] /((df.iloc[-1, 0] - df.iloc[0,0])/1000), 2))
 
     # find the 2 turns. 20 samples correspond approx to 1/3 seconds
-    alpha_ma = utils_functions.moving_average(df['alpha'], 20)
+    alpha_ma = utils_parkapp.moving_average(df['alpha'], 20)
 
     result = start_change(alpha_ma)
 
@@ -249,30 +249,30 @@ def full_algo(df_start):
 
         # Do the same for the “all” signal (with stronger threshold).
         new_start_all = find_zero_phase_end2(
-            utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
-        new_end_all = find_zero_phase_end_reverse2(utils_functions.moving_average(df_test['all']), 20, k=0.15)
+            utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
+        new_end_all = find_zero_phase_end_reverse2(utils_parkapp.moving_average(df_test['all']), 20, k=0.15)
         t_new_start_all = df_red.at[new_start_all, 'relative_timestamp']
         t_new_end_all = df_test.at[new_end_all, 'relative_timestamp']
 
         # Find first/last peaks in der_beta_gamma and rotRate_beta_gamma
         start_beta_gamma = first_peak(
-            utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
-        end_beta_gamma = last_peak(utils_functions.moving_average(df_test['der_beta_gamma']))
+            utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
+        end_beta_gamma = last_peak(utils_parkapp.moving_average(df_test['der_beta_gamma']))
         t_start_beta_gamma = df_red.at[start_beta_gamma, 'relative_timestamp']
         t_end_beta_gamma = df_test.at[end_beta_gamma, 'relative_timestamp']
-        start_rot = first_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'rotRate_beta_gamma']), 75)
-        end_rot = last_peak(utils_functions.moving_average(df_test['rotRate_beta_gamma']), 75)
+        start_rot = first_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'rotRate_beta_gamma']), 75)
+        end_rot = last_peak(utils_parkapp.moving_average(df_test['rotRate_beta_gamma']), 75)
         t_start_rot = df_red.at[start_rot, 'relative_timestamp']
         t_end_rot = df_test.at[end_rot, 'relative_timestamp']
 
         # end of standing and start of sitting
-        end_stand_beta_gamma = last_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_beta_gamma, 'der_beta_gamma']), 1)
-        start_sit_beta_gamma = first_peak(utils_functions.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']), 1)
+        end_stand_beta_gamma = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_beta_gamma, 'der_beta_gamma']), 1)
+        start_sit_beta_gamma = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']), 1)
         t_end_stand_beta_gamma = df_red.at[start_beta_gamma + end_stand_beta_gamma, 'relative_timestamp']
         t_start_sit_beta_gamma = df.at[start_turn2 + start_sit_beta_gamma, 'relative_timestamp']
 
-        end_stand_rot = last_peak(utils_functions.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_rot, 'rotRate_beta_gamma']), 70)
-        start_sit_rot = first_peak(utils_functions.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_rot), 'rotRate_beta_gamma']), 70)
+        end_stand_rot = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_rot, 'rotRate_beta_gamma']), 70)
+        start_sit_rot = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_rot), 'rotRate_beta_gamma']), 70)
         t_end_stand_rot = df_red.at[start_rot + end_stand_rot, 'relative_timestamp']
         t_start_sit_rot = df.at[start_turn2 + start_sit_rot, 'relative_timestamp']
 

@@ -94,7 +94,7 @@ class TUGTest:
             dataset_id: str,
             user_id: int,
             session_id: int,
-            gt_total: Optional[float],
+            gt_total: Optional[float] = None,
             gt_phases: Optional[TUGPhases] = None
     ):
         # Identifiers

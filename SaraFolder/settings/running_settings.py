@@ -1,7 +1,9 @@
 ##################### Data
 data_parkapp = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_parkapp"
-data_synergy = ""
-data_pisatug = ""
+data_synpisa = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_synpisa"
+test_id_start_parkapp = 0
+test_id_start_synergy = 0
+test_id_start_pisatug = 0
 
 ##################### Results
 results_path = r"C:\Users\ao4518\Desktop\PHD\TUG-test\SaraFolder\results"
