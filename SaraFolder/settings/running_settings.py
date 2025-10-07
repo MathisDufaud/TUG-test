@@ -1,5 +1,5 @@
 ##################### Data
-data_parkapp = r"C:\Users\ao4518\Desktop\PHD\TUG-test\all_data"
+data_parkapp = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_parkapp"
 data_synergy = ""
 data_pisatug = ""
 
