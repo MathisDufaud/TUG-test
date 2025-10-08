@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.signal as signal
 
+from SaraFolder.settings import classes
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 
 
@@ -99,7 +100,7 @@ def start_change(base_data, window_size=100, threshold=120):
 
     return start_change(base_data, window_size=window_size+10, threshold=threshold-10)
 
-def find_zero_phase_end2(data, min_duration=30,k=0.05):
+def find_zero_phase_end2(data, min_duration=30, k=0.05):
     """
     Find the end index of a phase where the signal (DERIVATIVE!) is close to zero for at least `min_duration` samples.
     Args:
@@ -234,45 +235,48 @@ def full_algo(df_start):
         df_red.reset_index(drop=True, inplace=True)
 
         # Subset after second turn end
-        df_test = df_red.loc[(df_red['relative_timestamp'] >= t_end_turn2 - 1)].copy()
-        if df_test.empty:
+        df_testend = df_red.loc[(df_red['relative_timestamp'] >= t_end_turn2 - 1)].copy()
+        df_teststart = df_red.loc[(df_red['relative_timestamp'] <= t_start_turn)].copy()
+        if df_testend.empty:
             return "df_test empty"
 
-        df_test.reset_index(drop=True, inplace=True)
+        df_testend.reset_index(drop=True, inplace=True)
 
         # --- Detect zero-phase regions (derivative & all) ---
         # Finding index before first turn and after the last turn
         new_start_der = find_zero_phase_end2(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'derivative'])
-        new_end_der = find_zero_phase_end_reverse2(df_test['derivative'], 20) # Similar to previous, but scans forward instead of backward.
+        new_end_der = find_zero_phase_end_reverse2(df_testend['derivative'], 20) # Similar to previous, but scans forward instead of backward.
         t_new_start_der = df_red.at[new_start_der, 'relative_timestamp']
-        t_new_end_der = df_test.at[new_end_der, 'relative_timestamp']
+        t_new_end_der = df_testend.at[new_end_der, 'relative_timestamp']
 
         # Do the same for the “all” signal (with stronger threshold).
         new_start_all = find_zero_phase_end2(
             utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
-        new_end_all = find_zero_phase_end_reverse2(utils_parkapp.moving_average(df_test['all']), 20, k=0.15)
+        new_end_all = find_zero_phase_end_reverse2(utils_parkapp.moving_average(df_testend['all']), 20, k=0.15)
         t_new_start_all = df_red.at[new_start_all, 'relative_timestamp']
-        t_new_end_all = df_test.at[new_end_all, 'relative_timestamp']
+        t_new_end_all = df_testend.at[new_end_all, 'relative_timestamp']
 
         # Find first/last peaks in der_beta_gamma and rotRate_beta_gamma
         start_beta_gamma = first_peak(
             utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
-        end_beta_gamma = last_peak(utils_parkapp.moving_average(df_test['der_beta_gamma']))
+        end_beta_gamma = last_peak(utils_parkapp.moving_average(df_testend['der_beta_gamma']))
         t_start_beta_gamma = df_red.at[start_beta_gamma, 'relative_timestamp']
-        t_end_beta_gamma = df_test.at[end_beta_gamma, 'relative_timestamp']
+        t_end_beta_gamma = df_testend.at[end_beta_gamma, 'relative_timestamp']
         start_rot = first_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'rotRate_beta_gamma']), 75)
-        end_rot = last_peak(utils_parkapp.moving_average(df_test['rotRate_beta_gamma']), 75)
+        end_rot = last_peak(utils_parkapp.moving_average(df_testend['rotRate_beta_gamma']), 75)
         t_start_rot = df_red.at[start_rot, 'relative_timestamp']
-        t_end_rot = df_test.at[end_rot, 'relative_timestamp']
+        t_end_rot = df_testend.at[end_rot, 'relative_timestamp']
 
         # end of standing and start of sitting
         end_stand_beta_gamma = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_beta_gamma, 'der_beta_gamma']), 1)
-        start_sit_beta_gamma = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']), 1)
+        start_sit_beta_gamma = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) &
+                                                                                  (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']), 1)
         t_end_stand_beta_gamma = df_red.at[start_beta_gamma + end_stand_beta_gamma, 'relative_timestamp']
         t_start_sit_beta_gamma = df.at[start_turn2 + start_sit_beta_gamma, 'relative_timestamp']
 
         end_stand_rot = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_rot, 'rotRate_beta_gamma']), 70)
-        start_sit_rot = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) & (df_red['relative_timestamp'] <= t_end_rot), 'rotRate_beta_gamma']), 70)
+        start_sit_rot = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) &
+                                                                           (df_red['relative_timestamp'] <= t_end_rot), 'rotRate_beta_gamma']), 70)
         t_end_stand_rot = df_red.at[start_rot + end_stand_rot, 'relative_timestamp']
         t_start_sit_rot = df.at[start_turn2 + start_sit_rot, 'relative_timestamp']
 
@@ -284,26 +288,56 @@ def full_algo(df_start):
 
         return t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end
 
-
 def looping_tests(all_tests):
     # TODO: keep track of what is not computed (missed turns, no data...)
     for test in all_tests:
-        result = full_algo(test.raw_data)
-        test.results = {}
-        if isinstance(result, str):
-            print(f"erreur avec {test.test_id} :", result)
-        else:
-            t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
-            algo_results = {
-                "t_start": t_start,
-                "t_end_stand": t_end_stand,
-                "t_start_turn": t_start_turn,
-                "t_end_turn": t_end_turn,
-                "t_start_turn2": t_start_turn2,
-                "t_end_turn2": t_end_turn2,
-                "t_start_sit": t_start_sit,
-                "t_end": t_end
-            }
-            test.results['labelling'] = algo_results
-
+        if False:
+            result = full_algo(test.raw_data)
+            test.results = {}
+            if isinstance(result, str):
+                print(f"erreur avec {test.test_id} :", result)
+            else:
+                t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
+                algo_results = {
+                    "t_start": t_start,
+                    "t_end_stand": t_end_stand,
+                    "t_start_turn": t_start_turn,
+                    "t_end_turn": t_end_turn,
+                    "t_start_turn2": t_start_turn2,
+                    "t_end_turn2": t_end_turn2,
+                    "t_start_sit": t_start_sit,
+                    "t_end": t_end
+                }
+                test.results['labelling'] = algo_results
+        if True:
+            test.plot_labelling(method='labelling', plot=True)
     return all_tests
+
+
+def labelling_method(test):
+    result = full_algo(test.raw_data)
+    test.results = {}
+
+    t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
+    algo_results = {
+        "t_start": t_start,
+        "t_end_stand": t_end_stand,
+        "t_start_turn": t_start_turn,
+        "t_end_turn": t_end_turn,
+        "t_start_turn2": t_start_turn2,
+        "t_end_turn2": t_end_turn2,
+        "t_start_sit": t_start_sit,
+        "t_end": t_end
+    }
+    test.results['labelling'] = algo_results
+    return test
+
+
+def compute_method(test, method):
+
+    if method == 'labelling':
+        test = labelling_method(test)
+
+    pass
+
+

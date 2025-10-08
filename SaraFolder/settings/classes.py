@@ -8,6 +8,9 @@ from datetime import datetime
 from typing import Optional, Dict, List
 from pathlib import Path
 import numpy as np
+from matplotlib import pyplot as plt
+
+from SaraFolder.settings import utils_labelling
 
 
 class Logger:
@@ -30,6 +33,9 @@ class Logger:
         self.logging = False
         self.log.close()
 
+class Results:
+    def __init__(self, **entries):
+        self.__dict__.update(entries)
 
 @dataclass
 class SmartphoneInfo:
@@ -125,17 +131,6 @@ class TUGTest:
 
         ## Results
         self.results: Optional[Dict] = None
-    @property
-    def gt_total(self) -> float:
-        """Total duration of the TUG test (ground truth)."""
-        return self._gt_total
-
-    @gt_total.setter
-    def gt_total(self, value: float):
-        if value <= 0:
-            raise ValueError("Ground truth total must be positive")
-        self._gt_total = value
-
     def preprocess(self, **kwargs) -> None:
         """
         Preprocess raw sensor data.
@@ -155,7 +150,7 @@ class TUGTest:
         # TODO: Implement preprocessing logic
         return self.raw_data.accelerometer.values
 
-    def plot_raw_data(self, sensors: Optional[List[str]] = None) -> None:
+    def plot_raw_data(self):
         """
         Plot raw sensor data.
 
@@ -164,54 +159,46 @@ class TUGTest:
         """
         import matplotlib.pyplot as plt
 
-        sensors = sensors or ['accelerometer', 'gyroscope']
-        fig, axes = plt.subplots(len(sensors), 1, figsize=(12, 4 * len(sensors)))
+        df_plot = self.raw_data
+        if self.gt_phases is None:
+            print("No phases detected, cannot plot.")
+        else:
+            t_start = self.gt_phases.t_start
+            t_end_stand = self.gt_phases.t_end_stand
+            t_start_turn = self.gt_phases.t_start_turn
+            t_end_turn = self.gt_phases.t_end_turn
+            t_start_turn2 = self.gt_phases.t_start_turn2
+            t_start_sit = self.gt_phases.t_start_sit
+            t_end = self.gt_phases.t_end
 
-        if len(sensors) == 1:
-            axes = [axes]
+        fig, ax1 = plt.subplots(figsize=(10, 5))
+        ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
+                 label="Motion (m/s²)", color="blue", linestyle="-")
 
-        for ax, sensor in zip(axes, sensors):
-            data = getattr(self.raw_data, sensor)
-            if data.is_loaded():
-                ax.plot(data.timestamps, data.values)
-                ax.set_xlabel('Time (s)')
-                ax.set_ylabel(f'{sensor.capitalize()} (units)')
-                ax.set_title(f'{sensor.capitalize()} - Test {self.test_id}')
-                ax.grid(True, alpha=0.3)
+        ax1.set_xlabel("Time (s)")
+        ax1.set_ylabel("Acceleration (m/s²)", color="blue")
+        ax1.tick_params(axis='y', labelcolor="blue")
 
-        plt.tight_layout()
+        ax1.axvspan(t_start, t_end, color="orange", alpha=0.2, label="Total duration")
+        ax1.axvspan(t_start_turn, t_end_turn, color="limegreen", alpha=0.5, label="First turn")
+        ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.5, label="Second turn")
+        # ax1.axvspan(t_start, t_end_stand, color="red", alpha=0.5, label="First turn")
+        # ax1.axvspan(t_start_sit, t_end, color="pink", alpha=0.5, label="Second turn")
+
+        ax3 = ax1.twinx()
+        ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
+        ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
+        ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
+
+        plt.xticks(rotation=45)
+
+        ax1.grid()
+        ax1.legend(loc="upper left")
+        ax3.legend(loc="lower right")
+
+        plt.title("Results on motion and orientation")
+
         plt.show()
-
-    def plot_phases(self) -> None:
-        """Plot detected phases overlaid on sensor data."""
-        import matplotlib.pyplot as plt
-
-        if not self.raw_data.accelerometer.is_loaded():
-            raise ValueError("Raw data must be loaded")
-
-        fig, ax = plt.subplots(figsize=(14, 6))
-
-        # Plot accelerometer magnitude
-        acc_data = self.raw_data.accelerometer
-        magnitude = np.linalg.norm(acc_data.values, axis=1)
-        ax.plot(acc_data.timestamps, magnitude, label='Acceleration Magnitude')
-
-        # Overlay ground truth phases if available
-        if self.gt_phases:
-            for phase_name, (start, end) in self.gt_phases.to_dict().items():
-                ax.axvspan(start, end, alpha=0.3, label=f'GT: {phase_name}')
-
-        # Overlay predicted phases if available
-        if self.predicted_phases:
-            for phase_name, (start, end) in self.predicted_phases.items():
-                ax.axvline(start, color='red', linestyle='--', alpha=0.5)
-                ax.axvline(end, color='red', linestyle='--', alpha=0.5)
-
-        ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Acceleration Magnitude')
-        ax.set_title(f'TUG Test {self.test_id} - Phase Detection')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.show()
 
@@ -226,9 +213,9 @@ class TUGTest:
             'test_id': self.test_id,
             'user_id': self.user_id,
             'dataset_id': self.dataset_id,
-            'ground_truth_total': self.ground_truth_total,
+            'ground_truth_total': self.gt_total,
             'predicted_total': self.predicted_total,
-            'error': abs(self.predicted_total - self.ground_truth_total)
+            'error': abs(self.predicted_total - self.gt_total)
             if self.predicted_total else None,
             'wearing_position': self.wearing_position,
             'created_on': self.created_on,
@@ -238,4 +225,55 @@ class TUGTest:
 
     def __repr__(self) -> str:
         return (f"TUGTest(id={self.test_id}, user={self.user_id}, "
-                f"gt_total={self.ground_truth_total:.2f}s)")
+                f"gt_total={self.gt_total:.2f}s)")
+
+    def plot_labelling(self, method, plot=False):
+        utils_labelling.compute_method(self, method)
+
+        results = Results(**self.results[method])
+
+        if plot:
+            df_plot = self.raw_data
+            if self.gt_phases is None:
+                print("No phases detected, cannot plot.")
+            else:
+                t_start = self.gt_phases.t_start
+                t_end_stand = self.gt_phases.t_end_stand
+                t_start_turn = self.gt_phases.t_start_turn
+                t_end_turn = self.gt_phases.t_end_turn
+                t_start_turn2 = self.gt_phases.t_start_turn2
+                t_start_sit = self.gt_phases.t_start_sit
+                t_end = self.gt_phases.t_end
+
+            fig, ax1 = plt.subplots(figsize=(10, 5))
+            ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
+                     label="Motion (m/s²)", color="blue", linestyle="-")
+
+            ax1.set_xlabel("Time (s)")
+            ax1.set_ylabel("Acceleration (m/s²)", color="blue")
+            ax1.tick_params(axis='y', labelcolor="blue")
+
+            ax1.axvspan(t_start, t_end, color="orange", alpha=0.3, label="Total duration")
+            ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
+
+            ax1.axvspan(t_start_turn, t_end_turn, color="darkgreen", alpha=0.6, label="First turn")
+            ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.6, label="Second turn")
+
+            ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4, label="First turn - estimation")
+            ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4, label="Second turn - estimation")
+
+            ax3 = ax1.twinx()
+            ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
+            ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
+            ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
+
+            plt.xticks(rotation=45)
+
+            ax1.grid()
+            ax1.legend(loc="upper left")
+            ax3.legend(loc="lower right")
+
+            plt.title(f"Results of TUG  - {method} approach - {self.user_id}_{self.session_id}")
+
+            plt.show()
+            plt.tight_layout()

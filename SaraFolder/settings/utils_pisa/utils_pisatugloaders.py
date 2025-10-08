@@ -318,31 +318,34 @@ def load_json_data():
 def load_test(path, test_id):
     tests = []
     participant = path.split(os.sep)[-1].split("_")[1]
-    unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in os.listdir(path) if f.endswith(".csv")])
-    for i, t in enumerate(unique_tests):
-        test_id += 1
-        motion = path + os.sep + 'tug' + t + '_motion.csv'
-        orientation = path + os.sep + 'tug' + t + '_orientation.csv'
+    try:
+        unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in os.listdir(path) if f.endswith(".csv")])
+        for i, t in enumerate(unique_tests):
+            test_id += 1
+            motion = path + os.sep + 'tug' + t + '_motion.csv'
+            orientation = path + os.sep + 'tug' + t + '_orientation.csv'
 
-        if os.path.exists(motion) and os.path.exists(orientation):
-            test = classes.TUGTest(test_id=test_id,
-                                   session_id=int(t),
-                                   user_id=int(participant),
-                                   dataset_id="synergy")
+            if os.path.exists(motion) and os.path.exists(orientation):
+                test = classes.TUGTest(test_id=test_id,
+                                       session_id=int(t),
+                                       user_id=int(participant),
+                                       dataset_id="synergy")
 
-            df_motion = pd.read_csv(motion)
-            df_orientation = pd.read_csv(orientation)
+                df_motion = pd.read_csv(motion)
+                df_orientation = pd.read_csv(orientation)
 
-            # Merge on timestamp column
-            df_motion = df_motion.sort_values('msFromStart')
-            df_orientation = df_orientation.sort_values('msFromStart')
+                # Merge on timestamp column
+                df_motion = df_motion.sort_values('msFromStart')
+                df_orientation = df_orientation.sort_values('msFromStart')
 
-            df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
+                df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
 
-            test.raw_data = df_merged
+                test.raw_data = df_merged
 
-            tests.append(df_merged)
-
+                tests.append(test)
+    except:
+        print("Bug here for participant ", participant, " in path ", path)
+        print(os.listdir(path))
     return tests, test_id
 
 
@@ -352,7 +355,8 @@ def load_pisatests():
     data_path = running_settings.data_synpisa
     for t in os.listdir(data_path):
         if os.path.isdir(data_path + os.sep + t) and t.startswith("p"):
+            print("################################ Participant folder: ", t)
             tests, test_id = load_test(data_path + os.sep + t, test_id)
             all_tests.extend(tests)
-
+        print("\n")
     return None
