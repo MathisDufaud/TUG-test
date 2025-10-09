@@ -11,6 +11,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from SaraFolder.settings import utils_labelling
+from SaraFolder.settings.utils_pisa import utils_pisatugloaders
 
 
 class Logger:
@@ -100,7 +101,8 @@ class TUGTest:
             dataset_id: str,
             user_id: int,
             session_id: int,
-            gt_total: Optional[float] = None,
+            gt_total_gwalk: Optional[float] = None,
+            gt_total_manual: Optional[float] = None,
             gt_phases: Optional[TUGPhases] = None
     ):
         # Identifiers
@@ -110,7 +112,8 @@ class TUGTest:
         self.session_id = session_id
 
         # Ground truth
-        self.gt_total = gt_total
+        self.gt_total_manual = gt_total_manual
+        self.gt_total_gwalk = gt_total_gwalk
         self.gt_phases = gt_phases or TUGPhases()
 
         # Metadata
@@ -213,9 +216,9 @@ class TUGTest:
             'test_id': self.test_id,
             'user_id': self.user_id,
             'dataset_id': self.dataset_id,
-            'ground_truth_total': self.gt_total,
+            'ground_truth_total': self.gt_total_gwalk,
             'predicted_total': self.predicted_total,
-            'error': abs(self.predicted_total - self.gt_total)
+            'error': abs(self.predicted_total - self.gt_total_gwalk)
             if self.predicted_total else None,
             'wearing_position': self.wearing_position,
             'created_on': self.created_on,
@@ -225,55 +228,78 @@ class TUGTest:
 
     def __repr__(self) -> str:
         return (f"TUGTest(id={self.test_id}, user={self.user_id}, "
-                f"gt_total={self.gt_total:.2f}s)")
+                f"gt_total={self.gt_total_gwalk:.2f}s)")
 
     def plot_labelling(self, method, plot=False):
-        utils_labelling.compute_method(self, method)
+        if self.dataset_id != 'parkapp':
+            self.processed_data = utils_pisatugloaders.process_data(self.raw_data)
+        if not isinstance(self.processed_data, str):
+            utils_labelling.compute_method(self, method)
 
-        results = Results(**self.results[method])
+            if not isinstance(self.results[method], str):
+                results = Results(**self.results[method])
 
-        if plot:
-            df_plot = self.raw_data
-            if self.gt_phases is None:
-                print("No phases detected, cannot plot.")
-            else:
-                t_start = self.gt_phases.t_start
-                t_end_stand = self.gt_phases.t_end_stand
-                t_start_turn = self.gt_phases.t_start_turn
-                t_end_turn = self.gt_phases.t_end_turn
-                t_start_turn2 = self.gt_phases.t_start_turn2
-                t_start_sit = self.gt_phases.t_start_sit
-                t_end = self.gt_phases.t_end
+                if plot:
+                    df_plot = self.processed_data
+                    if self.gt_phases is None:
+                        print("No phases detected, cannot plot.")
+                    else:
+                        t_start = self.gt_phases.t_start
+                        t_end_stand = self.gt_phases.t_end_stand
+                        t_start_turn = self.gt_phases.t_start_turn
+                        t_end_turn = self.gt_phases.t_end_turn
+                        t_start_turn2 = self.gt_phases.t_start_turn2
+                        t_start_sit = self.gt_phases.t_start_sit
+                        t_end = self.gt_phases.t_end
 
-            fig, ax1 = plt.subplots(figsize=(10, 5))
-            ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
-                     label="Motion (m/s²)", color="blue", linestyle="-")
+                    fig, ax1 = plt.subplots(figsize=(10, 5))
+                    ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
+                             label="Motion (m/s²)", color="blue", linestyle="-")
 
-            ax1.set_xlabel("Time (s)")
-            ax1.set_ylabel("Acceleration (m/s²)", color="blue")
-            ax1.tick_params(axis='y', labelcolor="blue")
+                    ax1.set_xlabel("Time (s)")
+                    ax1.set_ylabel("Acceleration (m/s²)", color="blue")
+                    ax1.tick_params(axis='y', labelcolor="blue")
 
-            ax1.axvspan(t_start, t_end, color="orange", alpha=0.3, label="Total duration")
-            ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
+                    if self.dataset_id == 'parkapp':
+                        ax1.axvspan(t_start, t_end, color="orange", alpha=0.3, label="Total duration")
+                        ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
 
-            ax1.axvspan(t_start_turn, t_end_turn, color="darkgreen", alpha=0.6, label="First turn")
-            ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.6, label="Second turn")
+                        ax1.axvspan(t_start_turn, t_end_turn, color="darkgreen", alpha=0.6, label="First turn")
+                        ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.6, label="Second turn")
 
-            ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4, label="First turn - estimation")
-            ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4, label="Second turn - estimation")
+                        ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4, label="First turn - estimation")
+                        ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4, label="Second turn - estimation")
 
-            ax3 = ax1.twinx()
-            ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
-            ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
-            ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
+                        ax3 = ax1.twinx()
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
 
-            plt.xticks(rotation=45)
+                    if self.dataset_id == 'synergy' or self.dataset_id == 'pisa':
+                        ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
+                        ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4,
+                                    label="First turn - estimation")
+                        ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4,
+                                    label="Second turn - estimation")
 
-            ax1.grid()
-            ax1.legend(loc="upper left")
-            ax3.legend(loc="lower right")
+                        ax3 = ax1.twinx()
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red",
+                                 linestyle="--")
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green",
+                                 linestyle="-.")
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple",
+                                 linestyle=":")
+                        ax3.legend(loc="lower right")
 
-            plt.title(f"Results of TUG  - {method} approach - {self.user_id}_{self.session_id}")
+                    plt.title(f"TUG estimation, {method} approach, "
+                              f"{self.user_id}_{self.session_id}, "
+                              f"{self.dataset_id}, "
+                              f"GTmanual - Est = {np.round(self.gt_total_manual/1000 - (results.t_end-results.t_start), 2)}")
 
-            plt.show()
-            plt.tight_layout()
+                    plt.xticks(rotation=45)
+
+                    ax1.grid()
+                    ax1.legend(loc="upper left")
+
+                    plt.show()
+                    plt.tight_layout()

@@ -315,21 +315,28 @@ def looping_tests(all_tests):
 
 
 def labelling_method(test):
-    result = full_algo(test.raw_data)
+    result = full_algo(test.processed_data)
     test.results = {}
 
-    t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
-    algo_results = {
-        "t_start": t_start,
-        "t_end_stand": t_end_stand,
-        "t_start_turn": t_start_turn,
-        "t_end_turn": t_end_turn,
-        "t_start_turn2": t_start_turn2,
-        "t_end_turn2": t_end_turn2,
-        "t_start_sit": t_start_sit,
-        "t_end": t_end
-    }
-    test.results['labelling'] = algo_results
+    try:
+        if not isinstance(result, str):
+            t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
+            algo_results = {
+                "t_start": t_start,
+                "t_end_stand": t_end_stand,
+                "t_start_turn": t_start_turn,
+                "t_end_turn": t_end_turn,
+                "t_start_turn2": t_start_turn2,
+                "t_end_turn2": t_end_turn2,
+                "t_start_sit": t_start_sit,
+                "t_end": t_end
+            }
+            test.results['labelling'] = algo_results
+        else:
+            print(result)
+            test.results['labelling'] = result
+    except:
+        print("bug")
     return test
 
 

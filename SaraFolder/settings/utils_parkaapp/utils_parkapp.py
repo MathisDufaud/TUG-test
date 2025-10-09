@@ -263,7 +263,7 @@ def build_general_df(all_tests):
         n_samples = len(test.raw_data)
         df = test.raw_data
         duration = (df['msFromStart'].iloc[-1] - df['msFromStart'].iloc[0]) / 1000
-        durationGT = test.gt_total
+        durationGT = test.gt_total_gwalk
         df_general = pd.concat([df_general, pd.DataFrame({'Participant': [participant],
                                                           'Session': [session],
                                                           'samples': [n_samples],
@@ -391,7 +391,7 @@ def set_up_tests(df_fusion, df_gt_dict, dataset_id='parkaapp'):
                                user_id=k.split('_')[0],
                                session_id=k.split('_')[1],
                                dataset_id=dataset_id,
-                               gt_total= gt_dict['t_end'] - gt_dict['t_start'],
+                               gt_total_manual = gt_dict['t_end'] - gt_dict['t_start'],
                                gt_phases=gt_phases
                                )
         test.created_on = None
@@ -399,6 +399,7 @@ def set_up_tests(df_fusion, df_gt_dict, dataset_id='parkaapp'):
         test.smartphone_info = None
         test.context = 'supervised' if k[-1] == 's' else 'unsupervised'
         test.raw_data = t
+        test.processed_data = t
 
         all_tests.append(test)
 

@@ -62,10 +62,12 @@ def phases_eval(all_results, gt_dict):
 def evaluate_results(all_tests, eval_type, method, dataset):
     # TODO: A lot of skipped tests, some of them maybe are not that wrong?
 
-    all_results = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.results['labelling'] for test in all_tests if 'labelling' in test.results.keys()}
-    all_gts = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.gt_phases.to_dict() for test in all_tests if test.gt_phases is not None}
-
     if eval_type == 'phases':
+        all_results = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.results['labelling']
+                       for test in all_tests if 'labelling' in test.results.keys()}
+        all_gts = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.gt_phases.to_dict() for
+                   test in all_tests if test.gt_phases is not None}
+
         indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
 
         if dataset == 'parkapp':
@@ -100,6 +102,9 @@ def evaluate_results(all_tests, eval_type, method, dataset):
 
         lg.stop_logging()
         sys.stdout = sys.__stdout__
+
+    if eval_type == 'duration':
+        print(1)
 
     return None
 

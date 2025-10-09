@@ -315,48 +315,112 @@ def load_json_data():
     return tug_df
 
 
-def load_test(path, test_id):
+def load_test(path, test_id, df_tug_ref):
     tests = []
     participant = path.split(os.sep)[-1].split("_")[1]
-    try:
+    if int(participant) < 10:
         unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in os.listdir(path) if f.endswith(".csv")])
-        for i, t in enumerate(unique_tests):
-            test_id += 1
-            motion = path + os.sep + 'tug' + t + '_motion.csv'
-            orientation = path + os.sep + 'tug' + t + '_orientation.csv'
+        dataset='synergy'
+    else:
+        tests_csvs = [f for f in os.listdir(path) if f.startswith("tug")]
+        unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in tests_csvs])
+        dataset='pisa'
 
-            if os.path.exists(motion) and os.path.exists(orientation):
-                test = classes.TUGTest(test_id=test_id,
-                                       session_id=int(t),
-                                       user_id=int(participant),
-                                       dataset_id="synergy")
+    for i, t in enumerate(unique_tests):
+        test_id += 1
+        motion = path + os.sep + 'tug' + t + '_motion.csv'
+        orientation = path + os.sep + 'tug' + t + '_orientation.csv'
 
-                df_motion = pd.read_csv(motion)
-                df_orientation = pd.read_csv(orientation)
+        if os.path.exists(motion) and os.path.exists(orientation):
+            test = classes.TUGTest(test_id = test_id,
+                                   session_id = int(t),
+                                   user_id = int(participant),
+                                   dataset_id = dataset)
+            test.context = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['homeClinic'].values[0]
+            test.gt_total_gwalk = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['GWALKReferenceMs'].values[0]
+            if df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] is not None and df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0] is not None:
+                test.gt_total_manual = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] - df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0]
 
-                # Merge on timestamp column
-                df_motion = df_motion.sort_values('msFromStart')
-                df_orientation = df_orientation.sort_values('msFromStart')
+            df_motion = pd.read_csv(motion)
+            df_orientation = pd.read_csv(orientation)
 
-                df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
+            # Merge on timestamp column
+            df_motion = df_motion.sort_values('msFromStart')
+            df_orientation = df_orientation.sort_values('msFromStart')
 
-                test.raw_data = df_merged
+            df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
 
-                tests.append(test)
-    except:
-        print("Bug here for participant ", participant, " in path ", path)
-        print(os.listdir(path))
+            test.raw_data = df_merged
+
+            tests.append(test)
+
     return tests, test_id
 
 
-def load_pisatests():
+def load_synpisatests():
     all_tests = []
     test_id = running_settings.test_id_start_synergy
     data_path = running_settings.data_synpisa
+    tugscsv = data_path + os.sep + "tugs.csv"
+    df_tug_ref = pd.read_csv(tugscsv)
     for t in os.listdir(data_path):
         if os.path.isdir(data_path + os.sep + t) and t.startswith("p"):
             print("################################ Participant folder: ", t)
-            tests, test_id = load_test(data_path + os.sep + t, test_id)
+            tests, test_id = load_test(data_path + os.sep + t, test_id, df_tug_ref)
             all_tests.extend(tests)
         print("\n")
-    return None
+    return all_tests
+
+
+def process_data(df_raw):
+    # Original columns: 'msFromStart', 'accX', 'accY', 'accZ', 'accGX', 'accGY', 'accGZ',
+    #        'rotA', 'rotB', 'rotG', 'orA', 'orB', 'orG'],
+    # Removing missing values with linear interpolation
+    # TODO change here
+    df_raw = df_raw.fillna(method='ffill').interpolate()
+    df_raw.dropna(inplace=True)
+
+    if len(df_raw) > 0:
+        df_raw['relative_timestamp'] = pd.to_timedelta(df_raw['msFromStart'], unit='milliseconds').dt.total_seconds()
+
+        df_corrected = df_raw.copy()
+        try:
+            for elem in ['orA', 'orB', 'orG']:
+                base = df_corrected[elem].iloc[0]
+                for i in range(len(df_corrected)):
+                    val = df_corrected[elem].iloc[i]
+                    if val > base + 50:
+                        df_corrected.loc[i:,elem] -= abs(val-base)
+                    elif val < base - 50:
+                        df_corrected.loc[i:,elem] += abs(val-base)
+                    base = df_corrected[elem].iloc[i]
+        except:
+            print(1)
+
+        #interpolate
+        df_final = df_raw.copy()
+        df_final['orA'] = np.interp(df_raw['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['orA'])
+        df_final['orB'] = np.interp(df_raw['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['orB'])
+        df_final['orG'] = np.interp(df_raw['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['orG'])
+
+        df_final['sqrt(X²+Y²+Z²)'] = np.sqrt((np.abs(df_final['accX']))**2 + (np.abs(df_final['accY']))**2 + (np.abs(df_final['accZ']))**2)
+
+        #create new columns
+        df_final['all'] = np.sqrt(((np.abs(df_final['accX'])-np.min(np.abs(df_final['accX'])))/(np.max(np.abs(df_final['accX']))-np.min(np.abs(df_final['accX']))))**2
+                                    + ((np.abs(df_final['accY'])-np.min(np.abs(df_final['accY'])))/(np.max(np.abs(df_final['accY']))-np.min(np.abs(df_final['accY']))))**2
+                                    + ((np.abs(df_final['accZ'])-np.min(np.abs(df_final['accZ'])))/(np.max(np.abs(df_final['accZ']))-np.min(np.abs(df_final['accZ']))))**2
+                                    + ((np.abs(df_final['rotA'])-np.min(np.abs(df_final['rotA'])))/(np.max(np.abs(df_final['rotA']))-np.min(np.abs(df_final['rotA']))))**2
+                                    + ((np.abs(df_final['rotB'])-np.min(np.abs(df_final['rotB'])))/(np.max(np.abs(df_final['rotB']))-np.min(np.abs(df_final['rotB']))))**2
+                                    + ((np.abs(df_final['rotG'])-np.min(np.abs(df_final['rotG'])))/(np.max(np.abs(df_final['rotG']))-np.min(np.abs(df_final['rotG']))))**2)
+
+        df_final['derivative'] = np.abs(np.gradient(df_final['orA'])) + np.abs(np.gradient(df_final['orB'])) + np.abs(np.gradient(df_final['orG']))
+
+        df_final['der_beta_gamma'] = np.abs(np.gradient(df_final['orB'])) + np.abs(np.gradient(df_final['orG']))
+
+        df_final['rotRate_beta_gamma'] = np.sqrt((df_final['rotB'])**2 + (df_final['rotG'])**2)
+
+        df_final = df_final.rename(columns={'orA':'alpha', 'orB':'beta', 'orG':'gamma'})
+
+        return df_final
+    else:
+        return 'empty df raw'
