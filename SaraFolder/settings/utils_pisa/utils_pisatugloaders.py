@@ -336,7 +336,12 @@ def load_test(path, test_id, df_tug_ref):
                                    session_id = int(t),
                                    user_id = int(participant),
                                    dataset_id = dataset)
-            test.context = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['homeClinic'].values[0]
+            context = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['homeClinic'].values[0]
+            if context == 'home':
+                context = 'unsupervised'
+            else:
+                context = 'supervised'
+            test.context = context
             test.gt_total_gwalk = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['GWALKReferenceMs'].values[0]
             if df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] is not None and df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0] is not None:
                 test.gt_total_manual = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] - df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0]

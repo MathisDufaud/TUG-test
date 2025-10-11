@@ -40,35 +40,53 @@ def phases_eval(all_results, gt_dict):
 
     for key, result in all_results.items():
         indiv_id, test_iter, clean_key = parse_key(key)
-        if key not in gt_dict:
+        if key not in gt_dict or isinstance(result, str):
             continue
 
         # remove unwanted key
         result = {k: v for k, v in result.items() if k != "t_end_turn2"}
-        gt = gt_dict[key]
+        if isinstance(gt_dict[key], dict):
+            gt = gt_dict[key]
 
-        # compute errors per phase (timestamp)
-        errors = {phase: result[phase] - gt[phase] for phase in result.keys() if phase in gt}
-        # compute errors per phase (duration)
-        errors_duration = error_duration_compute(result, gt, phases)
+            # compute errors per phase (timestamp)
+            errors = {phase: result[phase] - gt[phase] for phase in result.keys() if phase in gt}
+            # compute errors per phase (duration)
+            errors_duration = error_duration_compute(result, gt, phases)
 
-        indiv_errors[indiv_id][test_iter].append(errors)
-        indiv_errors_duration[indiv_id][test_iter].append(errors_duration)
+            indiv_errors[indiv_id][test_iter].append(errors)
+            indiv_errors_duration[indiv_id][test_iter].append(errors_duration)
+        else:
+            gt = gt_dict[key]
+            indiv_errors = None
+            if gt is not None:
+                errors_duration = {'total_duration': (result['t_end'] - result['t_start']) - gt/1000}
+                indiv_errors_duration[indiv_id][test_iter].append(errors_duration)
 
     return indiv_errors, indiv_errors_duration
 
 
+def define_res_gts(all_tests):
+    all_results = {}
+    all_gts = {}
+    for test in all_tests:
+        if test.results is not None and test.results['labelling'] is not None:
+            all_results[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.results[
+                'labelling']
+            if test.gt_phases.t_end is not None:
+                all_gts[
+                    str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_phases.to_dict()
+            else:
+                all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
+
+    return all_results, all_gts
+
 
 def evaluate_results(all_tests, eval_type, method, dataset):
     # TODO: A lot of skipped tests, some of them maybe are not that wrong?
+    all_results, all_gts = define_res_gts(all_tests)
+    indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
 
     if eval_type == 'phases':
-        all_results = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.results['labelling']
-                       for test in all_tests if 'labelling' in test.results.keys()}
-        all_gts = {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]: test.gt_phases.to_dict() for
-                   test in all_tests if test.gt_phases is not None}
-
-        indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
 
         if dataset == 'parkapp':
             res_path = running_settings.results_parkapp + \
@@ -93,7 +111,7 @@ def evaluate_results(all_tests, eval_type, method, dataset):
 
         # Convert to DataFrame for easier analysis
         df = create_error_dataframe(indiv_errors_duration)
-
+        df.dropna(inplace=True)
         # Analyze patterns
         patterns = analyze_error_patterns(df)
 
@@ -104,7 +122,20 @@ def evaluate_results(all_tests, eval_type, method, dataset):
         sys.stdout = sys.__stdout__
 
     if eval_type == 'duration':
+        # Run the aggregation
+        results = aggregate_errors(indiv_errors_duration)
+
+        # Convert to DataFrame for easier analysis
+        df = create_error_dataframe(indiv_errors_duration)
+
+        # Analyze patterns
+        patterns = analyze_error_patterns(df)
+
+        # Create visualizations
+        plot_error_distributions(df, method=method)
+
         print(1)
+
 
     return None
 
@@ -259,6 +290,7 @@ def plot_error_distributions(df, method):
     plt.suptitle('')
     plt.savefig(running_settings.figures_parkapp + os.sep + 'error_'+method+'.jpg', dpi=400)
     plt.show()
+
 
 def parse_key(key: str):
     """

@@ -160,9 +160,12 @@ class TUGTest:
         Args:
             sensors: List of sensors to plot (e.g., ['accelerometer', 'gyroscope'])
         """
+        if self.dataset_id != 'parkapp':
+            self.processed_data = utils_pisatugloaders.process_data(self.raw_data)
+
         import matplotlib.pyplot as plt
 
-        df_plot = self.raw_data
+        df_plot = self.processed_data
         if self.gt_phases is None:
             print("No phases detected, cannot plot.")
         else:
@@ -181,23 +184,39 @@ class TUGTest:
         ax1.set_xlabel("Time (s)")
         ax1.set_ylabel("Acceleration (m/s²)", color="blue")
         ax1.tick_params(axis='y', labelcolor="blue")
-
-        ax1.axvspan(t_start, t_end, color="orange", alpha=0.2, label="Total duration")
-        ax1.axvspan(t_start_turn, t_end_turn, color="limegreen", alpha=0.5, label="First turn")
-        ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.5, label="Second turn")
-        # ax1.axvspan(t_start, t_end_stand, color="red", alpha=0.5, label="First turn")
-        # ax1.axvspan(t_start_sit, t_end, color="pink", alpha=0.5, label="Second turn")
-
         ax3 = ax1.twinx()
-        ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
-        ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
-        ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
+        if self.dataset_id == 'parkapp':
+            ax1.axvspan(t_start, t_end, color="orange", alpha=0.2, label="Total duration")
+            ax1.axvspan(t_start_turn, t_end_turn, color="limegreen", alpha=0.5, label="First turn")
+            ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.5, label="Second turn")
 
-        plt.xticks(rotation=45)
+            ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
+            ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
+            ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
+
+        if self.dataset_id == 'synergy' or self.dataset_id == 'pisa':
+            ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red",
+                     linestyle="--")
+            ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green",
+                     linestyle="-.")
+            ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple",
+                     linestyle=":")
 
         ax1.grid()
         ax1.legend(loc="upper left")
         ax3.legend(loc="lower right")
+
+        if self.gt_total_manual is not None:
+            gt = self.gt_total_manual
+        else:
+            gt = self.gt_total_gwalk
+
+        plt.title(f"TUG raw data, "
+                  f"{self.user_id}_{self.session_id}, "
+                  f"{self.dataset_id}, "
+                  f"GTmanual = {np.round(gt/ 1000, 2)}")
+
+        plt.xticks(rotation=45)
 
         plt.title("Results on motion and orientation")
 
