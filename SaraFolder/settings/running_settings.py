@@ -26,10 +26,13 @@ models_parkapp = results_parkapp + r"\models"
 # name_df_processed = "df_processed.pickle" # name of the processed dataframe - LSTM
 name_df_processed = "dfprocessed_labelling.pickle" # name of the processed dataframe - LABELLING
 res_name = "results_labelling.txt"
-tugt_overview = "tugt_overview.txt"
+tugt_overview_parkapp = "tugt_overview_parkapp.txt"
+tugt_overview_pisa = "tugt_overview_pisa.txt"
+tugt_overview_synergy = "tugt_overview_synergy.txt"
 
 load_existing_model = True
 phases_to_consider = 1 # 1: tugt
+parameters = {'resamplingdelta': '16.666667ms'}
 
 param_labelling_algo = {
     'thresh_amplitude': 120,     # amplitude

@@ -93,11 +93,36 @@ def moving_average(data, window=5):
     return rolling_mean
 
 
+def new_columns(df_final):
+    df_final['all'] = np.sqrt(((np.abs(df_final['acc.x']) - np.min(np.abs(df_final['acc.x']))) / (
+            np.max(np.abs(df_final['acc.x'])) - np.min(np.abs(df_final['acc.x'])))) ** 2
+                              + ((np.abs(df_final['acc.y']) - np.min(np.abs(df_final['acc.y']))) / (
+            np.max(np.abs(df_final['acc.y'])) - np.min(np.abs(df_final['acc.y'])))) ** 2
+                              + ((np.abs(df_final['acc.z']) - np.min(np.abs(df_final['acc.z']))) / (
+            np.max(np.abs(df_final['acc.z'])) - np.min(np.abs(df_final['acc.z'])))) ** 2
+                              + ((np.abs(df_final['rotRate.alpha']) - np.min(np.abs(df_final['rotRate.alpha']))) / (
+            np.max(np.abs(df_final['rotRate.alpha'])) - np.min(np.abs(df_final['rotRate.alpha'])))) ** 2
+                              + ((np.abs(df_final['rotRate.beta']) - np.min(np.abs(df_final['rotRate.beta']))) / (
+            np.max(np.abs(df_final['rotRate.beta'])) - np.min(np.abs(df_final['rotRate.beta'])))) ** 2
+                              + ((np.abs(df_final['rotRate.gamma']) - np.min(np.abs(df_final['rotRate.gamma']))) / (
+            np.max(np.abs(df_final['rotRate.gamma'])) - np.min(np.abs(df_final['rotRate.gamma'])))) ** 2)
+
+    df_final['derivative'] = np.abs(np.gradient(df_final['alpha'])) + np.abs(
+        np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
+
+    df_final['der_beta_gamma'] = np.abs(np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
+
+    df_final['rotRate_beta_gamma'] = np.sqrt((df_final['rotRate.beta']) ** 2 + (df_final['rotRate.gamma']) ** 2)
+
+    return df_final
+
+
 def setup_df(df_m, df_o):
     if 'lstm' in running_settings.name_df_processed:
         """
         This version is from tugt_LSTM
         """
+
         df_corrected = df_o.copy()
         for elem in ['alpha', 'beta', 'gamma']:
             base = df_corrected[elem].iloc[0]
@@ -110,19 +135,29 @@ def setup_df(df_m, df_o):
                     df_corrected.loc[i:, elem] += abs(val - base)
                 base = df_corrected[elem].iloc[i]
 
+
         # interpolate - why is it necessary? Isnt' the 'relative_timestamp' column in df_m and in df_corrected, the same?
         df_final = df_m.copy()
-        df_final['alpha'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
+
+        df_final['alpha'] = np.interp(df_m['relative_timestamp'],
+                                      df_corrected['relative_timestamp'],
                                       df_corrected['alpha'])
-        df_final['beta'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
+
+        df_final['beta'] = np.interp(df_m['relative_timestamp'],
+                                     df_corrected['relative_timestamp'],
                                      df_corrected['beta'])
-        df_final['gamma'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
+
+        df_final['gamma'] = np.interp(df_m['relative_timestamp'],
+                                      df_corrected['relative_timestamp'],
                                       df_corrected['gamma'])
+
+
         df_final['phase'] = np.zeros(len(df_final))
 
         df_final['alpha'] = moving_average(df_final['alpha'], 20)
         for elem in ['beta', 'gamma', 'acc.x', 'acc.y', 'acc.z', 'rotRate.alpha', 'rotRate.beta', 'rotRate.gamma']:
             df_final[elem] = moving_average(df_final[elem])
+
         return df_final
 
     if 'labelling' in running_settings.name_df_processed:
@@ -141,35 +176,14 @@ def setup_df(df_m, df_o):
                     df_corrected.loc[i:, elem] += abs(val - base)
                 base = df_corrected[elem].iloc[i]
 
-        # interpolate
         df_final = df_m.copy()
-        df_final['alpha'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
-                                      df_corrected['alpha'])
-        df_final['beta'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
-                                     df_corrected['beta'])
-        df_final['gamma'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'],
-                                      df_corrected['gamma'])
+        df_final['alpha'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'], df_corrected['alpha'])
+        df_final['beta'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'], df_corrected['beta'])
+        df_final['gamma'] = np.interp(df_m['relative_timestamp'], df_corrected['relative_timestamp'], df_corrected['gamma'])
 
-        # create new columns
-        df_final['all'] = np.sqrt(((np.abs(df_final['acc.x']) - np.min(np.abs(df_final['acc.x']))) / (
-                np.max(np.abs(df_final['acc.x'])) - np.min(np.abs(df_final['acc.x'])))) ** 2
-                                  + ((np.abs(df_final['acc.y']) - np.min(np.abs(df_final['acc.y']))) / (
-                np.max(np.abs(df_final['acc.y'])) - np.min(np.abs(df_final['acc.y'])))) ** 2
-                                  + ((np.abs(df_final['acc.z']) - np.min(np.abs(df_final['acc.z']))) / (
-                np.max(np.abs(df_final['acc.z'])) - np.min(np.abs(df_final['acc.z'])))) ** 2
-                                  + ((np.abs(df_final['rotRate.alpha']) - np.min(np.abs(df_final['rotRate.alpha']))) / (
-                np.max(np.abs(df_final['rotRate.alpha'])) - np.min(np.abs(df_final['rotRate.alpha'])))) ** 2
-                                  + ((np.abs(df_final['rotRate.beta']) - np.min(np.abs(df_final['rotRate.beta']))) / (
-                np.max(np.abs(df_final['rotRate.beta'])) - np.min(np.abs(df_final['rotRate.beta'])))) ** 2
-                                  + ((np.abs(df_final['rotRate.gamma']) - np.min(np.abs(df_final['rotRate.gamma']))) / (
-                np.max(np.abs(df_final['rotRate.gamma'])) - np.min(np.abs(df_final['rotRate.gamma'])))) ** 2)
+        df_final = utils_pisatugloaders.resample60(df_final)
 
-        df_final['derivative'] = np.abs(np.gradient(df_final['alpha'])) + np.abs(
-            np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
-
-        df_final['der_beta_gamma'] = np.abs(np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
-
-        df_final['rotRate_beta_gamma'] = np.sqrt((df_final['rotRate.beta']) ** 2 + (df_final['rotRate.gamma']) ** 2)
+        df_final = new_columns(df_final)
 
         return df_final
 
@@ -256,53 +270,35 @@ def load_groundtruth_dict():
 
 
 def build_general_df(all_tests):
-    df_general = pd.DataFrame(columns=['Participant', 'Session', 'samples', 'duration', 'durationGT'])
+    df_general = pd.DataFrame(columns=['Participant', 'Session', 'samples', 'duration', 'durationGTg', 'durationGTm'])
     for test in all_tests:
         participant = test.user_id
         session = test.session_id
         n_samples = len(test.raw_data)
         df = test.raw_data
         duration = (df['msFromStart'].iloc[-1] - df['msFromStart'].iloc[0]) / 1000
-        durationGT = test.gt_total_gwalk
+        durationGTg = test.gt_total_gwalk
+        durationGTm = test.gt_total_manual
         df_general = pd.concat([df_general, pd.DataFrame({'Participant': [participant],
                                                           'Session': [session],
                                                           'samples': [n_samples],
                                                           'duration': [duration],
-                                                          'durationGT': [durationGT]})], ignore_index=True)
+                                                          'durationGTg': [durationGTg],
+                                                          'durationGTm': [durationGTm]})], ignore_index=True)
     return df_general
 
 
-def tugt_overview(all_tests):
+def tugt_overview_parkapp(all_tests):
     skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
 
     df_general = build_general_df(all_tests)
 
-    utils_plots.plot_tugtoverview(df_general)
-
-    lg = classes.Logger(running_settings.results_path + os.sep + running_settings.tugt_overview)
-    sys.stdout = lg
+    resultspath = running_settings.results_pisatug + os.sep + running_settings.tugt_overview_parkapp
+    utils_synloaders.overview_general(df_general, all_tests, resultspath=resultspath)
 
     print("Original amount of tests: ", len(all_tests) + len(skipped))
     print("Skipped tests for various reasons: ", len(skipped))
-    print("Remaining tests for analysis: ", len(all_tests))
-    print("# Participants: ", df_general['Participant'].nunique())
-    print("Average frequency (Hz) samples/seconds: ",
-          round((df_general['samples'] / df_general['duration']).mean(), 2))
-    print("Average # test per participant: ", df_general.groupby('Participant').size().mean())
-    print("Min # test per participant: ", df_general.groupby('Participant').size().min())
-    print("Max # test per participant: ", df_general.groupby('Participant').size().max())
-    print("Std # test per participant: ", round(df_general.groupby('Participant').size().std(), 2))
-    print("Average test duration (s) (raw): ", round(df_general['duration'].mean(), 2))
-    print("Min test duration (s) (raw): ", round(df_general['duration'].min(), 2))
-    print("Max test duration (s) (raw): ", round(df_general['duration'].max(), 2))
-    print("Std test duration (s) (raw): ", round(df_general['duration'].std(), 2))
-    print("Average test duration (s) (GT): ", round(df_general['durationGT'].mean(), 2))
-    print("Min test duration (s) (GT): ", round(df_general['durationGT'].min(), 2))
-    print("Max test duration (s) (GT): ", round(df_general['durationGT'].max(), 2))
-    print("Std test duration (s) (GT): ", round(df_general['durationGT'].std(), 2))
 
-    lg.stop_logging()
-    sys.stdout = sys.__stdout__
 
     return None
 
@@ -410,14 +406,14 @@ def load_all_tests(dataset_id):
 
     if dataset_id == 'parkapp':
         df_fusion = ready_df()
-        # df_gt = load_groundtruth_samplepersample(df_fusion)
         df_gt_dict = load_groundtruth_dict()
-
         all_tests = set_up_tests(df_fusion, df_gt_dict, dataset_id = dataset_id)
 
     elif dataset_id == 'synergy':
-        all_tests = utils_synloaders.load_syntests(dataset_id = dataset_id)
+        all_tests = utils_pisatugloaders.load_synpisatests()
+
+
     elif dataset_id == 'pisatug':
-        all_tests = utils_pisatugloaders.load_pisatugtests(dataset_id = dataset_id)
+        all_tests = utils_pisatugloaders.load_synpisatests()
 
     return all_tests

@@ -16,6 +16,6 @@ if __name__ == "__main__":
     utils_plots.plot_icc(icc_s, icctype = 'ICC2')
 
     if True:
-        utils_parkapp.tugt_overview(all_tests)
+        utils_parkapp.tugt_overview_parkapp(all_tests)
 
     print(1)

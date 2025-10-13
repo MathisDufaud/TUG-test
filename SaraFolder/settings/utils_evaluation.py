@@ -81,7 +81,7 @@ def define_res_gts(all_tests):
     return all_results, all_gts
 
 
-def evaluate_results(all_tests, eval_type, method, dataset):
+def evaluate_results(all_tests, eval_type, method, dataset, title):
     # TODO: A lot of skipped tests, some of them maybe are not that wrong?
     all_results, all_gts = define_res_gts(all_tests)
     indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
@@ -90,13 +90,13 @@ def evaluate_results(all_tests, eval_type, method, dataset):
 
         if dataset == 'parkapp':
             res_path = running_settings.results_parkapp + \
-                       os.sep + 'results_'+method+'.txt'
+                       os.sep + 'results'+title+'.txt'
         elif dataset == 'synergy':
             res_path = running_settings.results_synergy + \
-                                os.sep + 'results_'+method+'.txt'
+                                os.sep + 'results'+title+'.txt'
         elif dataset:
             res_path = running_settings.results_pisatug + \
-                                os.sep + 'results_'+method+'.txt'
+                                os.sep + 'results'+title+'.txt'
 
         # Logger start
         lg = classes.Logger(res_path)
@@ -116,7 +116,7 @@ def evaluate_results(all_tests, eval_type, method, dataset):
         patterns = analyze_error_patterns(df)
 
         # Create visualizations
-        plot_error_distributions(df, method=method)
+        plot_error_distributions(df, method=method, title=title)
 
         lg.stop_logging()
         sys.stdout = sys.__stdout__
@@ -132,7 +132,7 @@ def evaluate_results(all_tests, eval_type, method, dataset):
         patterns = analyze_error_patterns(df)
 
         # Create visualizations
-        plot_error_distributions(df, method=method)
+        plot_error_distributions(df, method=method, title=title)
 
         print(1)
 
@@ -232,7 +232,7 @@ def export_error_analysis_to_excel(df, filename="error_labelling.xlsx"):
 
     print(f"Error analysis exported to {filename}")
 
-def plot_error_distributions(df, method):
+def plot_error_distributions(df, method, title):
     """
     Create visualizations of error distributions.
     """
@@ -243,6 +243,7 @@ def plot_error_distributions(df, method):
     axes[0, 0].set_title('Error Distribution by Phase')
     axes[0, 0].axhline(y=0, color='r', linestyle='--', alpha=0.7)
     axes[0, 0].set_xlabel('')
+    axes[0, 0].set_ylabel('MAE')
 
     # 2. Absolute error by phase
     phase_mae = df.groupby('phase')['abs_error'].mean().sort_values(ascending=False)
@@ -256,8 +257,8 @@ def plot_error_distributions(df, method):
     df.boxplot(column='abs_error', by='individual_id', ax=axes[1, 0], rot=45)
     # Boxplot of individual MAE
     axes[1, 0].set_title('Distribution of Individual MAE')
-    axes[1, 0].set_xlabel('MAE')
-    axes[1, 0].set_ylabel('Frequency')
+    axes[1, 0].set_xlabel('Participants')
+    axes[1, 0].set_ylabel('MAE')
 
     # 4. Error vs iteration
     iteration_stats = df.groupby('iteration_id').agg({
@@ -288,7 +289,7 @@ def plot_error_distributions(df, method):
 
     plt.tight_layout()
     plt.suptitle('')
-    plt.savefig(running_settings.figures_parkapp + os.sep + 'error_'+method+'.jpg', dpi=400)
+    plt.savefig(running_settings.figures_parkapp + os.sep + 'eval' + title+'.jpg', dpi=400)
     plt.show()
 
 

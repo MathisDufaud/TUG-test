@@ -310,7 +310,8 @@ def looping_tests(all_tests):
                 }
                 test.results['labelling'] = algo_results
         if True:
-            test.plot_labelling(method='labelling', plot=True)
+            plot = False
+            test.plot_labelling(method='labelling', plot=plot)
     return all_tests
 
 

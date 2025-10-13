@@ -79,7 +79,7 @@ def plot_labelling_tug(df_plot, res):
     plt.show()
 
 
-def plot_tugtoverview(df_general):
+def plot_tugtoverview(df_general, image_path):
     """ Figure with subplots
     1) Number of test per participant
     2) Frequency distribution of the test per participant
@@ -109,7 +109,7 @@ def plot_tugtoverview(df_general):
     ax3.set_ylabel('Duration (s)')
     ax3.grid(axis='y')
     ax4 = fig.add_subplot(2, 2, 4)
-    df_general.boxplot(column='durationGT', by='Participant', ax=ax4)
+    df_general.boxplot(column='durationGTm', by='Participant', ax=ax4)
     ax4.set_title('Duration of the test per participant (GT)')
     ax4.set_xlabel('Participant')
     ax4.set_ylabel('Duration (s)')
@@ -118,7 +118,7 @@ def plot_tugtoverview(df_general):
 
     plt.tight_layout()
     plt.suptitle('')
-    plt.savefig(running_settings.figures_parkapp + os.sep + 'tug_overview.jpg', dpi=400)
+    plt.savefig(image_path, dpi=400)
     plt.show()
 
     return None

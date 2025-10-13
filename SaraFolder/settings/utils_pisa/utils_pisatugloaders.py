@@ -1,3 +1,5 @@
+import sys
+
 import pandas as pd
 import numpy as np
 import os
@@ -5,6 +7,9 @@ import os
 from matplotlib import pyplot as plt
 
 from SaraFolder.settings import running_settings, classes, utils_plots
+from SaraFolder.settings.utils_parkaapp import utils_parkapp
+from SaraFolder.settings.utils_synergy import utils_synloaders
+
 
 def load_pisatugtests(dataset_id):
     return None
@@ -26,7 +31,8 @@ def load_pisatugtests(dataset_id):
 #     return df_tug_home
 
 
-def plot_reliability_results(results_dict=None, save_plots=False, title='', figsize=(15, 10)):
+def plot_reliability_results(results_dict=None, save_plots=False, title='',
+                             figures_path=running_settings.figures_parkapp, figsize=(15, 10)):
     """
     Create comprehensive visualizations for test-retest reliability results
     """
@@ -201,7 +207,7 @@ def plot_reliability_results(results_dict=None, save_plots=False, title='', figs
     plt.tight_layout()
 
     if save_plots:
-        plt.savefig(figures_path + os.sep + title, dpi=400, bbox_inches='tight')
+        plt.savefig(running_settings.figures_path + os.sep + title, dpi=400, bbox_inches='tight')
         print("Plot saved")
 
     plt.show()
@@ -277,7 +283,7 @@ def compute_test_retest_reliability(df, min_tests=2, method='icc', verbose=True)
     return results
 
 
-def icc_analysis(tug_ref_data, title):
+def icc_analysis(tug_ref_data, title, figures_path):
 
     results = compute_test_retest_reliability(
         tug_ref_data,
@@ -286,7 +292,7 @@ def icc_analysis(tug_ref_data, title):
         verbose=True
     )
 
-    plot_reliability_results(results, save_plots=True, title=title)  # Using your actual results dictionary
+    plot_reliability_results(results, save_plots=True, title=title, figures_path=figures_path)  # Using your actual results dictionary
 
     return None
 
@@ -321,6 +327,7 @@ def load_test(path, test_id, df_tug_ref):
     if int(participant) < 10:
         unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in os.listdir(path) if f.endswith(".csv")])
         dataset='synergy'
+
     else:
         tests_csvs = [f for f in os.listdir(path) if f.startswith("tug")]
         unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in tests_csvs])
@@ -374,57 +381,56 @@ def load_synpisatests():
             tests, test_id = load_test(data_path + os.sep + t, test_id, df_tug_ref)
             all_tests.extend(tests)
         print("\n")
-    return all_tests
+
+    print("Keeping tests only if GT is available")
+    returntests = [test for test in all_tests if not np.isnan(test.gt_total_manual) or not np.isnan(test.gt_total_gwalk)]
+
+    return returntests
+
+def tugt_overview_pisa(all_tests):
+    df_general = utils_parkapp.build_general_df(all_tests)
+    resultspath = running_settings.results_pisatug + os.sep + running_settings.tugt_overview_pisa
+    utils_synloaders.overview_general(df_general, all_tests, resultspath=resultspath)
+
+
+def resample60(df_raw):
+    df_raw['datetime_index'] = pd.to_timedelta(df_raw['relative_timestamp'], unit='s')
+    df = df_raw.set_index('datetime_index')
+
+    # Sort by index to ensure proper interpolation
+    df = df.sort_index()
+    df_resampled = df.resample(running_settings.parameters['resamplingdelta']).mean()
+
+    # Interpolate all numeric columns
+    numeric_cols = df_resampled.select_dtypes(include=[np.number]).columns
+    df_resampled[numeric_cols] = df_resampled[numeric_cols].interpolate(method='linear')
+
+    # Recalculate msFromStart and relative_timestamp based on new sampling rate
+    time_seconds = df_resampled.index.total_seconds()
+    df_resampled['relative_timestamp'] = time_seconds
+    df_resampled['msFromStart'] = (time_seconds * 1000).astype(int)
+
+    # Reset index to get datetime_index as a column, then drop it
+    df_resampled = df_resampled.reset_index()
+    df_final = df_resampled.drop('datetime_index', axis=1)
+
+    return df_final
 
 
 def process_data(df_raw):
-    # Original columns: 'msFromStart', 'accX', 'accY', 'accZ', 'accGX', 'accGY', 'accGZ',
-    #        'rotA', 'rotB', 'rotG', 'orA', 'orB', 'orG'],
-    # Removing missing values with linear interpolation
-    # TODO change here
-    df_raw = df_raw.fillna(method='ffill').interpolate()
-    df_raw.dropna(inplace=True)
 
     if len(df_raw) > 0:
         df_raw['relative_timestamp'] = pd.to_timedelta(df_raw['msFromStart'], unit='milliseconds').dt.total_seconds()
 
-        df_corrected = df_raw.copy()
-        try:
-            for elem in ['orA', 'orB', 'orG']:
-                base = df_corrected[elem].iloc[0]
-                for i in range(len(df_corrected)):
-                    val = df_corrected[elem].iloc[i]
-                    if val > base + 50:
-                        df_corrected.loc[i:,elem] -= abs(val-base)
-                    elif val < base - 50:
-                        df_corrected.loc[i:,elem] += abs(val-base)
-                    base = df_corrected[elem].iloc[i]
-        except:
-            print(1)
+        df_raw['sqrt(X²+Y²+Z²)'] = np.sqrt((np.abs(df_raw['accX']))**2 +
+                                           (np.abs(df_raw['accY']))**2 +
+                                           (np.abs(df_raw['accZ']))**2)
 
-        #interpolate
-        df_final = df_raw.copy()
-        df_final['orA'] = np.interp(df_raw['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['orA'])
-        df_final['orB'] = np.interp(df_raw['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['orB'])
-        df_final['orG'] = np.interp(df_raw['relative_timestamp'],df_corrected['relative_timestamp'],df_corrected['orG'])
-
-        df_final['sqrt(X²+Y²+Z²)'] = np.sqrt((np.abs(df_final['accX']))**2 + (np.abs(df_final['accY']))**2 + (np.abs(df_final['accZ']))**2)
-
-        #create new columns
-        df_final['all'] = np.sqrt(((np.abs(df_final['accX'])-np.min(np.abs(df_final['accX'])))/(np.max(np.abs(df_final['accX']))-np.min(np.abs(df_final['accX']))))**2
-                                    + ((np.abs(df_final['accY'])-np.min(np.abs(df_final['accY'])))/(np.max(np.abs(df_final['accY']))-np.min(np.abs(df_final['accY']))))**2
-                                    + ((np.abs(df_final['accZ'])-np.min(np.abs(df_final['accZ'])))/(np.max(np.abs(df_final['accZ']))-np.min(np.abs(df_final['accZ']))))**2
-                                    + ((np.abs(df_final['rotA'])-np.min(np.abs(df_final['rotA'])))/(np.max(np.abs(df_final['rotA']))-np.min(np.abs(df_final['rotA']))))**2
-                                    + ((np.abs(df_final['rotB'])-np.min(np.abs(df_final['rotB'])))/(np.max(np.abs(df_final['rotB']))-np.min(np.abs(df_final['rotB']))))**2
-                                    + ((np.abs(df_final['rotG'])-np.min(np.abs(df_final['rotG'])))/(np.max(np.abs(df_final['rotG']))-np.min(np.abs(df_final['rotG']))))**2)
-
-        df_final['derivative'] = np.abs(np.gradient(df_final['orA'])) + np.abs(np.gradient(df_final['orB'])) + np.abs(np.gradient(df_final['orG']))
-
-        df_final['der_beta_gamma'] = np.abs(np.gradient(df_final['orB'])) + np.abs(np.gradient(df_final['orG']))
-
-        df_final['rotRate_beta_gamma'] = np.sqrt((df_final['rotB'])**2 + (df_final['rotG'])**2)
-
+        df_final = resample60(df_raw)
         df_final = df_final.rename(columns={'orA':'alpha', 'orB':'beta', 'orG':'gamma'})
+        df_final = df_final.rename(columns={'rotA':'rotRate.alpha', 'rotB':'rotRate.beta', 'rotG':'rotRate.gamma'})
+
+        df_final = utils_parkapp.new_columns(df_final)
 
         return df_final
     else:
