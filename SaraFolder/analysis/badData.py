@@ -17,7 +17,7 @@ if __name__ == "__main__":
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp]))
 
     if True:
-        utils_dataquality.observesingletests(all_tests)
+        utils_dataquality.observesingletests(all_tests, method='labelling')
 
 
     print('End of the document')

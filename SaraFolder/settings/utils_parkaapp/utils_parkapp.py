@@ -268,7 +268,9 @@ def load_groundtruth_dict():
     for key in skipped:
         if key in dict_times:
             del dict_times[key]
-    return dict_times
+    times_gwalk = pd.read_excel(base_path + os.sep + "gwalk_times.xlsx", index_col = 0)
+    times_gwalk = times_gwalk.transpose().to_dict()
+    return dict_times, times_gwalk
 
 
 def build_general_df(all_tests):
@@ -371,7 +373,7 @@ def tugt_icc(all_tests):
     return icc_s
 
 
-def set_up_tests(df_fusion, df_gt_dict, dataset_id='parkaapp'):
+def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp'):
     all_tests = []
     for i, (k, t) in enumerate(df_fusion.items()):
         gt_dict = df_gt_dict[k[:-2]]
@@ -390,14 +392,19 @@ def set_up_tests(df_fusion, df_gt_dict, dataset_id='parkaapp'):
                                session_id=k.split('_')[1],
                                dataset_id=dataset_id,
                                gt_total_manual = gt_dict['t_end'] - gt_dict['t_start'],
-                               # TODO change here!!!!! with real gwalk values
-                               gt_total_gwalk=gt_dict['t_end'] - gt_dict['t_start'],
                                gt_phases=gt_phases
                                )
         test.created_on = None
         test.wearing_position = 'waist-pouch'
         test.smartphone_info = None
         test.context = 'supervised' if k[-1] == 's' else 'unsupervised'
+        if test.context == 'supervised':
+            user = 'P' + k.split('_')[0]
+            if test.session_id == '1':
+                test.gt_total_gwalk = times_gwalk[user]['day0']
+            else:
+                test.gt_total_gwalk = times_gwalk[user]['day60']
+
         test.raw_data = t
         test.processed_data = t
 
@@ -417,8 +424,8 @@ def load_all_tests(dataset_id, context='supervised'):
 
     if dataset_id == 'parkapp':
         df_fusion = ready_df()
-        df_gt_dict = load_groundtruth_dict()
-        tests = set_up_tests(df_fusion, df_gt_dict, dataset_id=dataset_id)
+        df_gt_dict, times_gwalk = load_groundtruth_dict()
+        tests = set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id=dataset_id)
         all_tests = return_context_tests(tests, context)
 
     elif dataset_id == 'synergy':

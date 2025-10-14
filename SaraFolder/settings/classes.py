@@ -251,6 +251,7 @@ class TUGTest:
     def plot_labelling(self, method, plot=False):
         if self.dataset_id != 'parkapp' and self.processed_data is None:
             self.processed_data = utils_pisatugloaders.process_data(self.raw_data)
+
         if not isinstance(self.processed_data, str):
             utils_labelling.compute_method(self, method)
 

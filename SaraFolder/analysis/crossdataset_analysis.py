@@ -14,7 +14,7 @@ if __name__ == "__main__":
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp]))
 
     # All tests overview:
-    if True:
+    if False:
         utils_synloaders.overview_total(all_tests_parkapp, all_tests_pisa, all_tests_synergy,
                                         resultspath=running_settings.results_all, title='alltestssupervised')
 
