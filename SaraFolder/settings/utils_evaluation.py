@@ -5,6 +5,7 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+plt.ion()
 
 from SaraFolder.settings import classes, running_settings
 
@@ -57,7 +58,6 @@ def phases_eval(all_results, gt_dict):
             indiv_errors_duration[indiv_id][test_iter].append(errors_duration)
         else:
             gt = gt_dict[key]
-            indiv_errors = None
             if gt is not None:
                 errors_duration = {'total_duration': (result['t_end'] - result['t_start']) - gt/1000}
                 indiv_errors_duration[indiv_id][test_iter].append(errors_duration)
@@ -65,7 +65,7 @@ def phases_eval(all_results, gt_dict):
     return indiv_errors, indiv_errors_duration
 
 
-def define_res_gts(all_tests):
+def define_res_gts(all_tests, gttype):
     all_results = {}
     all_gts = {}
     for test in all_tests:
@@ -76,14 +76,19 @@ def define_res_gts(all_tests):
                 all_gts[
                     str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_phases.to_dict()
             else:
-                all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
+                # TODO Careful here, provide both analysis!!!
+                if gttype == 'gwalk':
+                    all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_gwalk
+                elif gttype == 'manual':
+                    all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
 
     return all_results, all_gts
 
 
-def evaluate_results(all_tests, eval_type, method, dataset, title):
+def evaluate_results(all_tests, eval_type, method, dataset, gttype, title):
     # TODO: A lot of skipped tests, some of them maybe are not that wrong?
-    all_results, all_gts = define_res_gts(all_tests)
+    title = title+'_' + gttype
+    all_results, all_gts = define_res_gts(all_tests, gttype=gttype)
     indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
 
     if eval_type == 'phases':
@@ -96,6 +101,9 @@ def evaluate_results(all_tests, eval_type, method, dataset, title):
                                 os.sep + 'results'+title+'.txt'
         elif dataset:
             res_path = running_settings.results_pisatug + \
+                                os.sep + 'results'+title+'.txt'
+        elif dataset == 'all':
+            res_path = running_settings.results_all + \
                                 os.sep + 'results'+title+'.txt'
 
         # Logger start
@@ -112,6 +120,7 @@ def evaluate_results(all_tests, eval_type, method, dataset, title):
         # Convert to DataFrame for easier analysis
         df = create_error_dataframe(indiv_errors_duration)
         df.dropna(inplace=True)
+
         # Analyze patterns
         patterns = analyze_error_patterns(df)
 
@@ -131,11 +140,11 @@ def evaluate_results(all_tests, eval_type, method, dataset, title):
         # Analyze patterns
         patterns = analyze_error_patterns(df)
 
+
         # Create visualizations
         plot_error_distributions(df, method=method, title=title)
 
         print(1)
-
 
     return None
 
@@ -268,24 +277,13 @@ def plot_error_distributions(df, method, title):
     }).rename(columns={'iteration_id': 'count'}).reset_index()
 
     # Use scatter with size scaled by count
-    axes[1, 1].scatter(
-        iteration_stats['iteration_id'].astype(int),
-        iteration_stats['error'],
-        s=iteration_stats['count'] * 10,  # scale factor (adjust as needed)
-        alpha=0.6,
-        label='Mean Error'
-    )
+    df.boxplot(column='abs_error', by='dataset', ax=axes[1, 1], rot=45)
+
     # Horizontal black dashed line at 0
     axes[1, 1].axhline(y=0, color='black', linestyle='--', alpha=0.7)
-    axes[1, 1].set_title('MAE by Iteration')
-    axes[1, 1].set_xlabel('Iteration ID')
+    axes[1, 1].set_title('Distribution of dataset-MAE')
+    axes[1, 1].set_xlabel('Dataset')
     axes[1, 1].set_ylabel('MAE')
-    # Add a custom legend for count = 1
-    legend_handles = [
-        plt.scatter([], [], s=7 * 10, color='C0', alpha=0.6, label='count = 1 TUG')
-    ]
-
-    axes[1, 1].legend(handles=legend_handles, title="Bubble Size")
 
     plt.tight_layout()
     plt.suptitle('')
@@ -304,7 +302,8 @@ def parse_key(key: str):
     if len(parts) < 2:
         warnings.warn(f"Unexpected key format: {key}", UserWarning)
         return None, None, clean_key
-    indiv_id, test_iter = parts[0], parts[1]
+    indiv_id  = parts[0] + '_' + parts[1]
+    test_iter = parts[2]
     return indiv_id, test_iter, clean_key
 
 
@@ -465,6 +464,7 @@ def create_error_dataframe(indiv_errors_duration):
     rows = []
 
     for individual_id, iterations in indiv_errors_duration.items():
+        dataset = individual_id.split('_')[1]
         for iteration_id, phase_data_list in iterations.items():
             for phase_data in phase_data_list:
                 for phase_name, error_value in phase_data.items():
@@ -473,7 +473,8 @@ def create_error_dataframe(indiv_errors_duration):
                         'iteration_id': iteration_id,
                         'phase': phase_name,
                         'error': error_value,
-                        'abs_error': abs(error_value)
+                        'abs_error': abs(error_value),
+                        'dataset': dataset
                     })
 
     return pd.DataFrame(rows)

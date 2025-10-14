@@ -5,10 +5,12 @@ import numpy as np
 import os
 import glob
 
+import matplotlib
+matplotlib.use('TkAgg')
 import pickle
 
 from matplotlib import pyplot as plt
-
+plt.ion()
 from SaraFolder.settings import running_settings, classes, utils_plots
 from SaraFolder.settings.utils_pisa import utils_pisatugloaders
 from SaraFolder.settings.utils_synergy import utils_synloaders
@@ -288,13 +290,13 @@ def build_general_df(all_tests):
     return df_general
 
 
-def tugt_overview_parkapp(all_tests):
+def tugt_overview_parkapp(all_tests, logging):
     skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
 
     df_general = build_general_df(all_tests)
 
     resultspath = running_settings.results_pisatug + os.sep + running_settings.tugt_overview_parkapp
-    utils_synloaders.overview_general(df_general, all_tests, resultspath=resultspath)
+    utils_synloaders.overview_general(df_general, all_tests, resultspath=resultspath, logging=logging, plot=True)
 
     print("Original amount of tests: ", len(all_tests) + len(skipped))
     print("Skipped tests for various reasons: ", len(skipped))
@@ -384,10 +386,12 @@ def set_up_tests(df_fusion, df_gt_dict, dataset_id='parkaapp'):
         )
 
         test = classes.TUGTest(test_id=i,
-                               user_id=k.split('_')[0],
+                               user_id=k.split('_')[0] + '_' + dataset_id,
                                session_id=k.split('_')[1],
                                dataset_id=dataset_id,
                                gt_total_manual = gt_dict['t_end'] - gt_dict['t_start'],
+                               # TODO change here!!!!! with real gwalk values
+                               gt_total_gwalk=gt_dict['t_end'] - gt_dict['t_start'],
                                gt_phases=gt_phases
                                )
         test.created_on = None
@@ -401,19 +405,30 @@ def set_up_tests(df_fusion, df_gt_dict, dataset_id='parkaapp'):
 
     return all_tests
 
+def return_context_tests(tests, context):
+    if context == 'supervised':
+        all_tests = [test for test in tests if test.context == context]
+    elif context == 'all':
+        all_tests = tests
 
-def load_all_tests(dataset_id):
+    return all_tests
+
+def load_all_tests(dataset_id, context='supervised'):
 
     if dataset_id == 'parkapp':
         df_fusion = ready_df()
         df_gt_dict = load_groundtruth_dict()
-        all_tests = set_up_tests(df_fusion, df_gt_dict, dataset_id = dataset_id)
+        tests = set_up_tests(df_fusion, df_gt_dict, dataset_id=dataset_id)
+        all_tests = return_context_tests(tests, context)
 
     elif dataset_id == 'synergy':
-        all_tests = utils_pisatugloaders.load_synpisatests()
+        tests = utils_pisatugloaders.load_synpisatests()
+        tests = [test for test in tests if test.dataset_id == 'synergy']
+        all_tests = return_context_tests(tests, context)
 
-
-    elif dataset_id == 'pisatug':
-        all_tests = utils_pisatugloaders.load_synpisatests()
+    elif dataset_id == 'pisa':
+        tests = utils_pisatugloaders.load_synpisatests()
+        tests = [test for test in tests if test.dataset_id == 'pisa']
+        all_tests = return_context_tests(tests, context)
 
     return all_tests

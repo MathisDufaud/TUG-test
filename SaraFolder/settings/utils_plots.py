@@ -1,4 +1,6 @@
 import os
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
@@ -75,9 +77,9 @@ def plot_labelling_tug(df_plot, res):
     ax3.legend(loc="lower right")
 
     plt.title("Results on motion and orientation")
-
     plt.show()
-
+    plt.tight_layout()
+    plt.savefig(running_settings.figures_all + os.sep + 'results_all.jpg', dpi=400)
 
 def plot_tugtoverview(df_general, image_path):
     """ Figure with subplots

@@ -1,6 +1,8 @@
 import numpy as np
 import scipy.signal as signal
 
+import matplotlib
+matplotlib.use('TkAgg')
 from SaraFolder.settings import classes
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 
@@ -349,3 +351,10 @@ def compute_method(test, method):
     pass
 
 
+def labelling_acrossall(all_tests):
+    # Run method
+    for t in all_tests:
+        t.plot_labelling(method='labelling', plot=False)
+
+
+    return None

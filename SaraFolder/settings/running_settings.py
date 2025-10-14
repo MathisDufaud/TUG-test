@@ -16,7 +16,7 @@ results_all = results_path + r"\results_all"
 figures_parkapp = results_parkapp + r"\figures"
 figures_synergy = results_synergy + r"\figures"
 figures_pisatug = results_pisatug + r"\figures"
-figures_all = results_all + r"\figures_all"
+figures_all = results_all + r"\figures"
 
 ##################### Models
 models_parkapp = results_parkapp + r"\models"

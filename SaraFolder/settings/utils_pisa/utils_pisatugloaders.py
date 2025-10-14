@@ -4,8 +4,10 @@ import pandas as pd
 import numpy as np
 import os
 
+import matplotlib
+matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
-
+plt.ion()
 from SaraFolder.settings import running_settings, classes, utils_plots
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 from SaraFolder.settings.utils_synergy import utils_synloaders
@@ -326,12 +328,11 @@ def load_test(path, test_id, df_tug_ref):
     participant = path.split(os.sep)[-1].split("_")[1]
     if int(participant) < 10:
         unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in os.listdir(path) if f.endswith(".csv")])
-        dataset='synergy'
-
+        dataset = 'synergy'
     else:
         tests_csvs = [f for f in os.listdir(path) if f.startswith("tug")]
         unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in tests_csvs])
-        dataset='pisa'
+        dataset = 'pisa'
 
     for i, t in enumerate(unique_tests):
         test_id += 1
@@ -341,7 +342,7 @@ def load_test(path, test_id, df_tug_ref):
         if os.path.exists(motion) and os.path.exists(orientation):
             test = classes.TUGTest(test_id = test_id,
                                    session_id = int(t),
-                                   user_id = int(participant),
+                                   user_id = str(int(participant)) + '_' + dataset,
                                    dataset_id = dataset)
             context = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['homeClinic'].values[0]
             if context == 'home':
@@ -349,9 +350,12 @@ def load_test(path, test_id, df_tug_ref):
             else:
                 context = 'supervised'
             test.context = context
+
             test.gt_total_gwalk = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['GWALKReferenceMs'].values[0]
             if df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] is not None and df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0] is not None:
                 test.gt_total_manual = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] - df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0]
+            else:
+                test.gt_total_manual = None
 
             df_motion = pd.read_csv(motion)
             df_orientation = pd.read_csv(orientation)
@@ -387,10 +391,10 @@ def load_synpisatests():
 
     return returntests
 
-def tugt_overview_pisa(all_tests):
+def tugt_overview_pisa(all_tests, logging):
     df_general = utils_parkapp.build_general_df(all_tests)
     resultspath = running_settings.results_pisatug + os.sep + running_settings.tugt_overview_pisa
-    utils_synloaders.overview_general(df_general, all_tests, resultspath=resultspath)
+    utils_synloaders.overview_general(df_general, all_tests, resultspath=resultspath, logging=logging, plot=True)
 
 
 def resample60(df_raw):
@@ -429,7 +433,7 @@ def process_data(df_raw):
         df_final = resample60(df_raw)
         df_final = df_final.rename(columns={'orA':'alpha', 'orB':'beta', 'orG':'gamma'})
         df_final = df_final.rename(columns={'rotA':'rotRate.alpha', 'rotB':'rotRate.beta', 'rotG':'rotRate.gamma'})
-
+        df_final = df_final.rename(columns={'accX':'acc.x', 'accY':'acc.y', 'accZ':'acc.z'})
         df_final = utils_parkapp.new_columns(df_final)
 
         return df_final

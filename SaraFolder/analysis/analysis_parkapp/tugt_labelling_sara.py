@@ -5,7 +5,7 @@ matplotlib.use('TkAgg')
 
 if __name__ == "__main__":
     # Loading data
-    all_tests = utils_parkapp.load_all_tests(dataset_id ='parkapp')
+    all_tests = utils_parkapp.load_all_tests(dataset_id ='parkapp', context='supervised')
 
     df_fusion = utils_parkapp.ready_df()
     df_gt = utils_parkapp.load_groundtruth_samplepersample(df_fusion)
@@ -24,4 +24,4 @@ if __name__ == "__main__":
     title = '_'+method+'resampled'
     dataset = 'parkapp'
     utils_evaluation.evaluate_results(all_tests, eval_type='phases', method=method,
-                                      dataset=dataset, title=title)
+                                      dataset=dataset, gttype='gwalk', title=title)

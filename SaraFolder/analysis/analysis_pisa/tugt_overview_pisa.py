@@ -14,14 +14,14 @@ if __name__ == "__main__":
     if False:
         all_tests[0].plot_labelling(method='labelling', plot=True)
 
-    utils_pisatugloaders.tugt_overview_pisa([test for test in all_tests if test.dataset_id == 'pisa'])
+    utils_pisatugloaders.tugt_overview_pisa([test for test in all_tests if test.dataset_id == 'pisa'], logging=False)
 
-    utils_synloaders.tugt_overview_synergy([test for test in all_tests if test.dataset_id == 'synergy'])
+    utils_synloaders.tugt_overview_synergy([test for test in all_tests if test.dataset_id == 'synergy'], logging=False)
 
     for a in all_tests:
         a.plot_labelling(method='labelling', plot=False)
 
-    utils_evaluation.evaluate_results(all_tests, eval_type='duration', method='labelling', dataset='pisa')
+    utils_evaluation.evaluate_results(all_tests, eval_type='duration', gttype='gwalk',  method='labelling', dataset='pisa')
 
 
     print(1)
