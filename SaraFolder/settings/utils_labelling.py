@@ -3,7 +3,7 @@ import scipy.signal as signal
 
 import matplotlib
 matplotlib.use('TkAgg')
-from SaraFolder.settings import classes
+from SaraFolder.settings import classes, utils_darioalgo
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 
 
@@ -205,6 +205,7 @@ def full_algo(df_start):
         return "empty df"
 
     # remove first 3 sec
+    # TODO: remove for synergy e pisa !!!!
     df = df_start.loc[(df_start['relative_timestamp'] >= 3)].copy()
     if df.empty:
         return "empty df after removing 3 sec"
@@ -293,25 +294,7 @@ def full_algo(df_start):
 def looping_tests(all_tests):
     # TODO: keep track of what is not computed (missed turns, no data...)
     for test in all_tests:
-        if False:
-            result = full_algo(test.raw_data)
-            test.results = {}
-            if isinstance(result, str):
-                print(f"erreur avec {test.test_id} :", result)
-            else:
-                t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
-                algo_results = {
-                    "t_start": t_start,
-                    "t_end_stand": t_end_stand,
-                    "t_start_turn": t_start_turn,
-                    "t_end_turn": t_end_turn,
-                    "t_start_turn2": t_start_turn2,
-                    "t_end_turn2": t_end_turn2,
-                    "t_start_sit": t_start_sit,
-                    "t_end": t_end
-                }
-                test.results['labelling'] = algo_results
-        if True:
+       if True:
             plot = False
             test.plot_labelling(method='labelling', plot=plot)
     return all_tests
@@ -319,27 +302,42 @@ def looping_tests(all_tests):
 
 def labelling_method(test):
     result = full_algo(test.processed_data)
-    test.results = {}
+    test.results['labelling'] = None
 
-    try:
-        if not isinstance(result, str):
-            t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
-            algo_results = {
-                "t_start": t_start,
-                "t_end_stand": t_end_stand,
-                "t_start_turn": t_start_turn,
-                "t_end_turn": t_end_turn,
-                "t_start_turn2": t_start_turn2,
-                "t_end_turn2": t_end_turn2,
-                "t_start_sit": t_start_sit,
-                "t_end": t_end
-            }
-            test.results['labelling'] = algo_results
-        else:
-            print(result)
-            test.results['labelling'] = result
-    except:
-        print("bug")
+    if not isinstance(result, str):
+        t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end = result
+        algo_results = {
+            "t_start": t_start,
+            "t_end_stand": t_end_stand,
+            "t_start_turn": t_start_turn,
+            "t_end_turn": t_end_turn,
+            "t_start_turn2": t_start_turn2,
+            "t_end_turn2": t_end_turn2,
+            "t_start_sit": t_start_sit,
+            "t_end": t_end
+        }
+        test.results['labelling'] = algo_results
+
+    else:
+        print(result)
+        test.results['labelling'] = result
+
+    return test
+
+
+def darioalgo_method(test):
+    result = utils_darioalgo.get_TUG_duration_4(test.processed_data)
+    test.results['darioalgo'] = None
+
+    if isinstance(result, dict):
+        algo_results = {
+            "t_start": result['startMs']/1000,
+            "t_end": result['endMs']/1000
+        }
+        test.results['darioalgo'] = algo_results
+    else:
+        print(result)
+        test.results['darioalgo'] = result
     return test
 
 
@@ -347,14 +345,15 @@ def compute_method(test, method):
 
     if method == 'labelling':
         test = labelling_method(test)
+    if method == 'darioalgo':
+        test = darioalgo_method(test)
 
     pass
 
 
-def labelling_acrossall(all_tests):
+def labelling_acrossall(all_tests, method):
     # Run method
     for t in all_tests:
-        t.plot_labelling(method='labelling', plot=False)
-
+        t.plot_labelling(method=method, plot=False)
 
     return None

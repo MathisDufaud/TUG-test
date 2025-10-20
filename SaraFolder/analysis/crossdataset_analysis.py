@@ -20,11 +20,10 @@ if __name__ == "__main__":
 
     # Run Simon and Mathis algo
     if True:
-        utils_labelling.labelling_acrossall(all_tests)
+        utils_labelling.labelling_acrossall(all_tests, method='darioalgo')
         utils_evaluation.evaluate_results(all_tests, eval_type='duration',
-                                          method='labelling',
-                                          gttype='gwalk',
-                                          dataset='all', title='all')
+                                          method='darioalgo', gttype='gwalk',
+                                          dataset='all', title='alldarioalgo', logging=True)
 
 
     print('End of the document')

@@ -428,14 +428,29 @@ def load_all_tests(dataset_id, context='supervised'):
         tests = set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id=dataset_id)
         all_tests = return_context_tests(tests, context)
 
-    elif dataset_id == 'synergy':
-        tests = utils_pisatugloaders.load_synpisatests()
-        tests = [test for test in tests if test.dataset_id == 'synergy']
-        all_tests = return_context_tests(tests, context)
+    elif dataset_id == 'synergy' or dataset_id == 'pisa':
+            if dataset_id == 'synergy':
+                if 'synergy_tests.pickle' in os.listdir(running_settings.data_synpisa):
+                    with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'rb') as handle:
+                        all_tests = pickle.load(handle)
+                else:
+                    tests = utils_pisatugloaders.load_synpisatests()
+                    tests = [test for test in tests if test.dataset_id == 'synergy']
+                    all_tests = return_context_tests(tests, context)
+                    with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'wb') as handle:
+                        pickle.dump(all_tests, handle)
 
-    elif dataset_id == 'pisa':
-        tests = utils_pisatugloaders.load_synpisatests()
-        tests = [test for test in tests if test.dataset_id == 'pisa']
-        all_tests = return_context_tests(tests, context)
+            elif dataset_id == 'pisa':
+                if 'pisa_tests.pickle' in os.listdir(running_settings.data_synpisa):
+                    with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'rb') as handle:
+                        all_tests = pickle.load(handle)
+                else:
+                    tests = utils_pisatugloaders.load_synpisatests()
+                    tests = [test for test in tests if test.dataset_id == 'pisa']
+                    all_tests = return_context_tests(tests, context)
+                    with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'wb') as handle:
+                        pickle.dump(all_tests, handle)
+
+
 
     return all_tests

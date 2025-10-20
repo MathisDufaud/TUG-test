@@ -65,13 +65,12 @@ def phases_eval(all_results, gt_dict):
     return indiv_errors, indiv_errors_duration
 
 
-def define_res_gts(all_tests, gttype):
+def define_res_gts(all_tests, gttype, method):
     all_results = {}
     all_gts = {}
     for test in all_tests:
-        if test.results is not None and test.results['labelling'] is not None:
-            all_results[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.results[
-                'labelling']
+        if test.results is not None and test.results[method] is not None:
+            all_results[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.results[method]
             if test.gt_phases.t_end is not None:
                 all_gts[
                     str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_phases.to_dict()
@@ -85,30 +84,30 @@ def define_res_gts(all_tests, gttype):
     return all_results, all_gts
 
 
-def evaluate_results(all_tests, eval_type, method, dataset, gttype, title):
+def evaluate_results(all_tests, eval_type, method, dataset, gttype, title, logging):
     # TODO: A lot of skipped tests, some of them maybe are not that wrong?
     title = title+'_' + gttype
-    all_results, all_gts = define_res_gts(all_tests, gttype=gttype)
+    all_results, all_gts = define_res_gts(all_tests, gttype=gttype, method=method)
     indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
 
+    if dataset == 'parkapp':
+        res_path = running_settings.results_parkapp + \
+                   os.sep + 'results' + title + '.txt'
+    elif dataset == 'synergy':
+        res_path = running_settings.results_synergy + \
+                   os.sep + 'results' + title + '.txt'
+    elif dataset:
+        res_path = running_settings.results_pisatug + \
+                   os.sep + 'results' + title + '.txt'
+    elif dataset == 'all':
+        res_path = running_settings.results_all + \
+                   os.sep + 'results' + title + '.txt'
+
     if eval_type == 'phases':
-
-        if dataset == 'parkapp':
-            res_path = running_settings.results_parkapp + \
-                       os.sep + 'results'+title+'.txt'
-        elif dataset == 'synergy':
-            res_path = running_settings.results_synergy + \
-                                os.sep + 'results'+title+'.txt'
-        elif dataset:
-            res_path = running_settings.results_pisatug + \
-                                os.sep + 'results'+title+'.txt'
-        elif dataset == 'all':
-            res_path = running_settings.results_all + \
-                                os.sep + 'results'+title+'.txt'
-
-        # Logger start
-        lg = classes.Logger(res_path)
-        sys.stdout = lg
+        if logging:
+            # Logger start
+            lg = classes.Logger(res_path)
+            sys.stdout = lg
 
         print(f"Total individuals evaluated: {len(indiv_errors_duration)}")
         total_tests = sum(len(tests) for tests in indiv_errors_duration.values())
@@ -125,12 +124,17 @@ def evaluate_results(all_tests, eval_type, method, dataset, gttype, title):
         patterns = analyze_error_patterns(df)
 
         # Create visualizations
-        plot_error_distributions(df, method=method, title=title)
+        plot_error_distributions(df, method=method, title=title, figpath=running_settings.figures_parkapp)
 
-        lg.stop_logging()
-        sys.stdout = sys.__stdout__
+        if logging:
+            lg.stop_logging()
+            sys.stdout = sys.__stdout__
 
     if eval_type == 'duration':
+        if logging:
+            # Logger start
+            lg = classes.Logger(res_path)
+            sys.stdout = lg
         # Run the aggregation
         results = aggregate_errors(indiv_errors_duration)
 
@@ -140,9 +144,12 @@ def evaluate_results(all_tests, eval_type, method, dataset, gttype, title):
         # Analyze patterns
         patterns = analyze_error_patterns(df)
 
-
         # Create visualizations
-        plot_error_distributions(df, method=method, title=title)
+        plot_error_distributions(df, method=method, title=title, figpath=running_settings.figures_all)
+
+        if logging:
+            lg.stop_logging()
+            sys.stdout = sys.__stdout__
 
         print(1)
 
@@ -241,7 +248,7 @@ def export_error_analysis_to_excel(df, filename="error_labelling.xlsx"):
 
     print(f"Error analysis exported to {filename}")
 
-def plot_error_distributions(df, method, title):
+def plot_error_distributions(df, method, title, figpath):
     """
     Create visualizations of error distributions.
     """
@@ -287,7 +294,7 @@ def plot_error_distributions(df, method, title):
 
     plt.tight_layout()
     plt.suptitle('')
-    plt.savefig(running_settings.figures_parkapp + os.sep + 'eval' + title+'.jpg', dpi=400)
+    plt.savefig(figpath + 'eval' + title+'.jpg', dpi=400)
     plt.show()
 
 

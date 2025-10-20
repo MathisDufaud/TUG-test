@@ -11,12 +11,6 @@ if __name__ == "__main__":
     df_gt = utils_parkapp.load_groundtruth_samplepersample(df_fusion)
     gt_dict = utils_parkapp.load_groundtruth_dict()
 
-    # Example with one test:
-    if False:
-        df_plot = df_fusion[list(df_fusion.keys())[5]]
-        res = utils_labelling.full_algo(df_plot)
-        utils_plots.plot_labelling_tug(df_plot, res)
-
     ## Looping all tests:
     all_tests = utils_labelling.looping_tests(all_tests)
 

@@ -13,7 +13,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 plt.ion()
 
-from SaraFolder.settings import utils_labelling
+from SaraFolder.settings import utils_labelling, utils_dataquality
 from SaraFolder.settings.utils_pisa import utils_pisatugloaders
 
 
@@ -126,8 +126,7 @@ class TUGTest:
         self.context: Optional[str] = None
 
         # Sensor data
-        # self.raw_data = RawSensorData()
-        # self.processed_data: Optional[pd.DataFrame()] = None
+
         self.raw_data: Optional[pd.DataFrame] = None
         self.processed_data: Optional[pd.DataFrame] = None
 
@@ -136,25 +135,7 @@ class TUGTest:
         self.predicted_phases: Optional[Dict[str, tuple[float, float]]] = None
 
         ## Results
-        self.results: Optional[Dict] = None
-    def preprocess(self, **kwargs) -> None:
-        """
-        Preprocess raw sensor data.
-
-        Args:
-            **kwargs: Preprocessing parameters (e.g., filter_type, cutoff_freq)
-        """
-        if not self.raw_data.is_complete():
-            raise ValueError("Raw data must be loaded before preprocessing")
-
-        # Implement your preprocessing pipeline
-        # Example: filtering, normalization, feature extraction
-        self.processed_data = self._apply_preprocessing(**kwargs)
-
-    def _apply_preprocessing(self, **kwargs) -> np.ndarray:
-        """Internal preprocessing implementation."""
-        # TODO: Implement preprocessing logic
-        return self.raw_data.accelerometer.values
+        self.results: Optional[Dict] = {}
 
     def plot_raw_data(self):
         """
@@ -163,9 +144,6 @@ class TUGTest:
         Args:
             sensors: List of sensors to plot (e.g., ['accelerometer', 'gyroscope'])
         """
-        if self.dataset_id != 'parkapp':
-            self.processed_data = utils_pisatugloaders.process_data(self.raw_data)
-
         df_plot = self.processed_data
         if self.gt_phases is None:
             print("No phases detected, cannot plot.")
@@ -244,14 +222,7 @@ class TUGTest:
             'data_processed': self.processed_data is not None
         }
 
-    def __repr__(self) -> str:
-        return (f"TUGTest(id={self.test_id}, user={self.user_id}, "
-                f"gt_total={self.gt_total_gwalk:.2f}s)")
-
     def plot_labelling(self, method, plot=False):
-        if self.dataset_id != 'parkapp' and self.processed_data is None:
-            self.processed_data = utils_pisatugloaders.process_data(self.raw_data)
-
         if not isinstance(self.processed_data, str):
             utils_labelling.compute_method(self, method)
 
@@ -322,3 +293,18 @@ class TUGTest:
 
                     plt.show()
                     plt.tight_layout()
+
+
+
+    def data_quality_investigation(self, plot=False):
+        print(f"Investigating data quality for {self.user_id}_{self.session_id}")
+
+        stats = utils_dataquality.compute_test_stats(self.processed_data)
+
+        self.data_quality_stats = stats
+
+        pass
+
+
+
+

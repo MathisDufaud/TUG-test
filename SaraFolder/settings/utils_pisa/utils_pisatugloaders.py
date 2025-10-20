@@ -5,6 +5,8 @@ import numpy as np
 import os
 
 import matplotlib
+from pingouin import intraclass_corr
+
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 plt.ion()
@@ -323,6 +325,71 @@ def load_json_data():
     return tug_df
 
 
+def twitching_orientationalpha(df_orientation):
+    if df_orientation.shape[0]>0:
+        # Make a copy to avoid modifying the original dataframe
+        df = df_orientation.copy()
+
+        # Ensure correct data types
+        df['msFromStart'] = df['msFromStart'].astype(int)
+        df['orA'] = df['orA'].astype(float)
+        df['orB'] = df['orB'].astype(float)
+        df['orG'] = df['orG'].astype(float)
+
+        # Store original values before modification
+        df['orA_original'] = df['orA']
+        df['orB_original'] = df['orB']
+        df['orG_original'] = df['orG']
+
+        # Initialize previous values
+        try:
+            previous_orA = df.iloc[0]['orA']
+            previous_orB = df.iloc[0]['orB']
+            previous_orG = df.iloc[0]['orG']
+        except:
+            print('issue here')
+
+        # Process each row starting from index 1
+        for i in range(1, len(df)):
+            # Get current original values
+            current_orA_original = df.iloc[i]['orA_original']
+            current_orB_original = df.iloc[i]['orB_original']
+            current_orG_original = df.iloc[i]['orG_original']
+
+            # Get previous original values
+            previous_orA_original = df.iloc[i - 1]['orA_original']
+            previous_orB_original = df.iloc[i - 1]['orB_original']
+            previous_orG_original = df.iloc[i - 1]['orG_original']
+
+            # Calculate and apply deltaA
+            deltaA = current_orA_original - previous_orA_original
+            if abs(deltaA) > 90:
+                deltaA = 0
+            df.iloc[i, df.columns.get_loc('orA')] = previous_orA + deltaA
+
+            # Calculate and apply deltaB
+            deltaB = current_orB_original - previous_orB_original
+            if abs(deltaB) > 90:
+                deltaB = 0
+            df.iloc[i, df.columns.get_loc('orB')] = previous_orB + deltaB
+
+            # Calculate and apply deltaG
+            deltaG = current_orG_original - previous_orG_original
+            if abs(deltaG) > 90:
+                deltaG = 0
+            df.iloc[i, df.columns.get_loc('orG')] = previous_orG + deltaG
+
+            # Update previous values with modified values
+            previous_orA = df.iloc[i]['orA']
+            previous_orB = df.iloc[i]['orB']
+            previous_orG = df.iloc[i]['orG']
+
+        # Remove the temporary original columns
+        df = df.drop(columns=['orA_original', 'orB_original', 'orG_original'])
+
+    return df
+
+
 def load_test(path, test_id, df_tug_ref):
     tests = []
     participant = path.split(os.sep)[-1].split("_")[1]
@@ -359,16 +426,18 @@ def load_test(path, test_id, df_tug_ref):
 
             df_motion = pd.read_csv(motion)
             df_orientation = pd.read_csv(orientation)
+            if df_motion.shape[0] != 0 and df_orientation.shape[0] != 0:
+                df_orientation = twitching_orientationalpha(df_orientation)
 
-            # Merge on timestamp column
-            df_motion = df_motion.sort_values('msFromStart')
-            df_orientation = df_orientation.sort_values('msFromStart')
+                # Merge on timestamp column
+                df_motion = df_motion.sort_values('msFromStart')
+                df_orientation = df_orientation.sort_values('msFromStart')
 
-            df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
+                df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
 
-            test.raw_data = df_merged
-
-            tests.append(test)
+                test.raw_data = df_merged
+                test.processed_data = process_data(df_merged)
+                tests.append(test)
 
     return tests, test_id
 
