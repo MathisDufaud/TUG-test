@@ -436,8 +436,14 @@ def load_test(path, test_id, df_tug_ref):
                 df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
 
                 test.raw_data = df_merged
+                if df_merged.shape[0] == 0:
+                    print(1)
                 test.processed_data = process_data(df_merged)
+                # Remove nan rows
+                test.processed_data = test.processed_data.dropna().reset_index(drop=True)
                 tests.append(test)
+            else:
+                print("Motion or orientation dataframes are empty")
 
     return tests, test_id
 

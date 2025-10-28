@@ -20,6 +20,7 @@ figures_all = results_all + r"\figures"
 
 ##################### Models
 models_parkapp = results_parkapp + r"\models"
+models_path = results_all + r"\models"
 
 ##################### Variables names
 ########## Park App Tests
@@ -30,9 +31,13 @@ tugt_overview_parkapp = "tugt_overview_parkapp.txt"
 tugt_overview_pisa = "tugt_overview_pisa.txt"
 tugt_overview_synergy = "tugt_overview_synergy.txt"
 
-load_existing_model = True
+load_existing_model = False
+model_comments = 'first_model_labelling_all_datasets'
 phases_to_consider = 1 # 1: tugt
-parameters = {'resamplingdelta': '16.666667ms'}
+parameters = {
+    'resamplingdelta': '16.666667ms',
+    'stride': 15,  # samples
+}
 
 param_labelling_algo = {
     'thresh_amplitude': 120,     # amplitude
@@ -49,3 +54,12 @@ param_labelling_algo = {
     'thresh_lastpeak': 1.2,
     'thresh_peak_rotbetagamma': 70,
 }
+
+param_opt_labelling_algo = {
+    'window_segment_turns': [100, 150, 200],
+    'max_alpha_amplitude': [100, 120, 140],
+    'max_amplitutde_start_turn_sample':[0.25, 0.3, 0.35],
+    'MCSFD':  [20, 30, 40],
+}
+
+

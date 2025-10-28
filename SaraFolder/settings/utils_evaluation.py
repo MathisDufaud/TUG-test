@@ -86,7 +86,7 @@ def define_res_gts(all_tests, gttype, method):
 
 def evaluate_results(all_tests, eval_type, method, dataset, gttype, title, logging):
     # TODO: A lot of skipped tests, some of them maybe are not that wrong?
-    title = title+'_' + gttype
+    title = dataset + '_' + title + '_' + gttype
     all_results, all_gts = define_res_gts(all_tests, gttype=gttype, method=method)
     indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
 
@@ -117,14 +117,14 @@ def evaluate_results(all_tests, eval_type, method, dataset, gttype, title, loggi
         results = aggregate_errors(indiv_errors_duration)
 
         # Convert to DataFrame for easier analysis
-        df = create_error_dataframe(indiv_errors_duration)
+        df = create_error_dataframe(indiv_errors_duration, all_tests)
         df.dropna(inplace=True)
 
         # Analyze patterns
         patterns = analyze_error_patterns(df)
 
         # Create visualizations
-        plot_error_distributions(df, method=method, title=title, figpath=running_settings.figures_parkapp)
+        plot_error_distributions(df, title=title, figpath=running_settings.figures_parkapp, eval_type=eval_type)
 
         if logging:
             lg.stop_logging()
@@ -139,19 +139,17 @@ def evaluate_results(all_tests, eval_type, method, dataset, gttype, title, loggi
         results = aggregate_errors(indiv_errors_duration)
 
         # Convert to DataFrame for easier analysis
-        df = create_error_dataframe(indiv_errors_duration)
+        df = create_error_dataframe(indiv_errors_duration, all_tests)
 
         # Analyze patterns
         patterns = analyze_error_patterns(df)
 
         # Create visualizations
-        plot_error_distributions(df, method=method, title=title, figpath=running_settings.figures_all)
+        plot_error_distributions(df, title=title, figpath=running_settings.figures_all, eval_type=eval_type)
 
         if logging:
             lg.stop_logging()
             sys.stdout = sys.__stdout__
-
-        print(1)
 
     return None
 
@@ -248,54 +246,179 @@ def export_error_analysis_to_excel(df, filename="error_labelling.xlsx"):
 
     print(f"Error analysis exported to {filename}")
 
-def plot_error_distributions(df, method, title, figpath):
+def plot_error_distributions(df, title, figpath, eval_type):
     """
     Create visualizations of error distributions.
     """
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    if eval_type == 'phases':
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 
-    # 1. Error distribution by phase
-    df.boxplot(column='error', by='phase', ax=axes[0, 0], rot=45)
-    axes[0, 0].set_title('Error Distribution by Phase')
-    axes[0, 0].axhline(y=0, color='r', linestyle='--', alpha=0.7)
-    axes[0, 0].set_xlabel('')
-    axes[0, 0].set_ylabel('MAE')
+        # 1. Error distribution by phase
+        df.boxplot(column='error', by='phase', ax=axes[0, 0], rot=45)
+        axes[0, 0].set_title('Error Distribution by Phase')
+        axes[0, 0].axhline(y=0, color='r', linestyle='--', alpha=0.7)
+        axes[0, 0].set_xlabel('')
+        axes[0, 0].set_ylabel('MAE')
 
-    # 2. Absolute error by phase
-    phase_mae = df.groupby('phase')['abs_error'].mean().sort_values(ascending=False)
-    axes[0, 1].bar(range(len(phase_mae)), phase_mae.values)
-    axes[0, 1].set_xticks(range(len(phase_mae)))
-    axes[0, 1].set_xticklabels(phase_mae.index, rotation=45)
-    axes[0, 1].set_title('Mean Absolute Error by Phase')
-    axes[0, 1].set_ylabel('MAE')
+        # 2. Absolute error by phase
+        phase_mae = df.groupby('phase')['abs_error'].mean().sort_values(ascending=False)
+        axes[0, 1].bar(range(len(phase_mae)), phase_mae.values)
+        axes[0, 1].set_xticks(range(len(phase_mae)))
+        axes[0, 1].set_xticklabels(phase_mae.index, rotation=45)
+        axes[0, 1].set_title('Mean Absolute Error by Phase')
+        axes[0, 1].set_ylabel('MAE')
 
-    # 3. Individual error patterns
-    df.boxplot(column='abs_error', by='individual_id', ax=axes[1, 0], rot=45)
-    # Boxplot of individual MAE
-    axes[1, 0].set_title('Distribution of Individual MAE')
-    axes[1, 0].set_xlabel('Participants')
-    axes[1, 0].set_ylabel('MAE')
+        # 3. Individual error patterns
+        df.boxplot(column='abs_error', by='individual_id', ax=axes[1, 0], rot=45)
+        # Boxplot of individual MAE
+        axes[1, 0].set_title('Distribution of Individual MAE')
+        axes[1, 0].set_xlabel('Participants')
+        axes[1, 0].set_ylabel('MAE')
 
-    # 4. Error vs iteration
-    iteration_stats = df.groupby('iteration_id').agg({
-        'error': 'mean',
-        'abs_error': 'mean',
-        'iteration_id': 'count'  # count number of samples
-    }).rename(columns={'iteration_id': 'count'}).reset_index()
+        # 4. Error vs iteration
+        iteration_stats = df.groupby('iteration_id').agg({
+            'error': 'mean',
+            'abs_error': 'mean',
+            'iteration_id': 'count'  # count number of samples
+        }).rename(columns={'iteration_id': 'count'}).reset_index()
 
-    # Use scatter with size scaled by count
-    df.boxplot(column='abs_error', by='dataset', ax=axes[1, 1], rot=45)
+        # Use scatter with size scaled by count
+        df.boxplot(column='abs_error', by='dataset', ax=axes[1, 1], rot=45)
+
+        # Horizontal black dashed line at 0
+        axes[1, 1].axhline(y=0, color='black', linestyle='--', alpha=0.7)
+        axes[1, 1].set_title('Distribution of dataset-MAE')
+        axes[1, 1].set_xlabel('Dataset')
+        axes[1, 1].set_ylabel('MAE')
+
+        plt.tight_layout()
+        plt.suptitle('')
+        # plt.savefig(figpath + 'eval' + title+'.jpg', dpi=400)
+        plt.show()
+
+    df = df[df['phase'] == 'total_duration']
+
+    # Only stats about the total_duration error
+    fig = plt.figure(figsize=(9, 6))
+
+    # Main plot takes up left 65% of the figure
+    ax = fig.add_subplot(1, 2, 1)
+    df.boxplot(column='error', by='dataset', ax=ax)
+    labels = [item.get_text() for item in ax.get_xticklabels()]
+
+    # Change xticks to add value counts of each dataset
+    ax.set_xticklabels(
+        [f"{dataset}\n(n={len(df[df['dataset'] == dataset])})" for dataset in labels]
+    )
 
     # Horizontal black dashed line at 0
-    axes[1, 1].axhline(y=0, color='black', linestyle='--', alpha=0.7)
-    axes[1, 1].set_title('Distribution of dataset-MAE')
-    axes[1, 1].set_xlabel('Dataset')
-    axes[1, 1].set_ylabel('MAE')
-
-    plt.tight_layout()
+    ax.axhline(y=0, color='black', linestyle='--', alpha=0.7)
+    ax.set_title('Error Distribution by Dataset')
+    ax.set_xlabel('')
+    ax.set_ylabel('Estimation - Ground Truth (s)')
     plt.suptitle('')
-    plt.savefig(figpath + 'eval' + title+'.jpg', dpi=400)
+
+    # Create text box on the right side
+    ax_text = fig.add_subplot(1, 2, 2)
+    ax_text.axis('off')
+
+    # Calculate statistics
+    stats_text = "Statistics Summary\n" + "=" * 40 + "\n\n"
+
+    # Overall statistics
+    overall_mean = df['error'].mean()
+    overall_std = df['error'].std()
+    overall_loa_lower = overall_mean - 1.96 * overall_std
+    overall_loa_upper = overall_mean + 1.96 * overall_std
+
+    stats_text += "Overall (All Data Points):\n"
+    stats_text += f"  Mean: {overall_mean:.3f} s\n"
+    stats_text += f"  Std Dev: {overall_std:.3f} s\n"
+    stats_text += f"  LoA: [{overall_loa_lower:.3f}, {overall_loa_upper:.3f}] s\n\n"
+
+    stats_text += "-" * 40 + "\n\n"
+
+    # Per dataset statistics
+    for dataset in df['dataset'].unique():
+        dataset_data = df[df['dataset'] == dataset]['error']
+        mean = dataset_data.mean()
+        std = dataset_data.std()
+        loa_lower = mean - 1.96 * std
+        loa_upper = mean + 1.96 * std
+        n = len(dataset_data)
+
+        stats_text += f"{dataset} (n={n}):\n"
+        stats_text += f"  Mean: {mean:.3f} s\n"
+        stats_text += f"  Std Dev: {std:.3f} s\n"
+        stats_text += f"  LoA: [{loa_lower:.3f}, {loa_upper:.3f}] s\n\n"
+
+    # Add text to the plot
+    ax_text.text(0.05, 0.95, stats_text,
+                 transform=ax_text.transAxes,
+                 fontsize=9,
+                 verticalalignment='top',
+                 fontfamily='monospace',
+                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+
+    plt.suptitle(f'Total TUG duration error - {title}')
+    plt.tight_layout()
+    plt.savefig(figpath + os.sep + 'evaltotduration_' + title+'.jpg', dpi=400)
     plt.show()
+
+    #### Per individual
+    # Filter to keep only participants with at least 2 tests
+    participant_counts = df['individual_id'].value_counts()
+    participants_with_multiple_tests = participant_counts[participant_counts >= 2].index
+    df_multiple = df[df['individual_id'].isin(participants_with_multiple_tests)].copy()
+
+    print(f"Participants with multiple tests: {len(participants_with_multiple_tests)}")
+    print(f"Total samples: {len(df_multiple)}")
+
+    if len(participants_with_multiple_tests)>0:
+        # Create figure
+        fig = plt.figure(figsize=(14, 6))
+        ax = fig.add_subplot(1, 1, 1)
+
+        # Create boxplot
+        df_multiple.boxplot(column='error', by='individual_id', ax=ax)
+
+        # Overlay individual data points
+        # Get unique participants in the order they appear in the boxplot
+        labels = [item.get_text() for item in ax.get_xticklabels()]
+        test_counts = df_multiple['individual_id'].value_counts()
+
+        # Plot individual points
+        for i, pid in enumerate(labels):
+            participant_data = df_multiple[df_multiple['individual_id'] == pid]['error']
+            # x position is i+1 (boxplot positions start at 1)
+            # Add small random jitter to x to avoid overlapping points
+            x_positions = np.random.normal(i + 1, 0.04, size=len(participant_data))
+            ax.scatter(x_positions, participant_data, alpha=0.6, color='red', s=50, zorder=3)
+
+        # Update x-tick labels with counts
+        ax.set_xticklabels(
+            [f"{pid}\n(n={test_counts[pid]})" for pid in labels],
+            rotation=45,
+            ha='right'
+        )
+
+        # Horizontal line at 0
+        ax.axhline(y=0, color='black', linestyle='--', alpha=0.7)
+
+        # Labels and title
+        ax.set_title(
+            f'Error Distribution by Participant (Multiple Tests Only, N={len(participants_with_multiple_tests)} participants)')
+        ax.set_xlabel('Participant ID')
+        ax.set_ylabel('Estimation - Ground Truth (s)')
+        plt.suptitle('')
+
+        plt.tight_layout()
+        plt.savefig(figpath +os.sep+   'evaltotduration_perindividualmultipletests_' + title+'.jpg', dpi=400)
+        plt.show()
+
+
+
+
 
 
 def parse_key(key: str):
@@ -464,7 +587,7 @@ def aggregate_errors(indiv_errors_duration):
     return results
 
 
-def create_error_dataframe(indiv_errors_duration):
+def create_error_dataframe(indiv_errors_duration, all_tests):
     """
     Convert nested dictionary to pandas DataFrame for easier analysis.
     """
@@ -481,7 +604,8 @@ def create_error_dataframe(indiv_errors_duration):
                         'phase': phase_name,
                         'error': error_value,
                         'abs_error': abs(error_value),
-                        'dataset': dataset
+                        'dataset': dataset,
+                        'dataquality': None
                     })
 
     return pd.DataFrame(rows)

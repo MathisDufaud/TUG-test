@@ -212,12 +212,13 @@ def add_tug_features(df, window_size_1s=60, window_size_half_s=30):
     pandas.DataFrame with added columns: 'accGMagnitude', 'accGMagnitudeVar',
                                          'orADer', 'orADerMean'
     """
+
     df = df.copy()
 
     # Calculate acceleration magnitude from gravity-corrected accelerometer
-    try:
+    if 'accGX' in df.columns:
         df['accGMagnitude'] = np.sqrt(df['accGX'] ** 2 + df['accGY'] ** 2 + df['accGZ'] ** 2)
-    except:
+    else:
         df['accGMagnitude'] = np.sqrt(df['accG.x'] ** 2 + df['accG.y'] ** 2 + df['accG.z'] ** 2)
 
     # Calculate rolling variance of acceleration magnitude (1 second window)
@@ -255,6 +256,126 @@ def add_tug_features(df, window_size_1s=60, window_size_half_s=30):
 # Usage:
 # df_processed = add_tug_features(df_start)
 # result = get_TUG_duration_4(df_processed)
+def find_peaks_algo(df):
+    # Convert dataframe to list of dicts for easier iteration
+    tug_data = df.to_dict('records')
+
+    PEAK_WINDOW_SIZE = 1000  # ms in which we look for orientation derivative peaks
+
+    wave_multiplier_threshold = 1.5  # multiplier of the mean orientation derivative
+    orientation_stats = RollingStats()
+
+    peaks = []
+    last_peak_ms = -PEAK_WINDOW_SIZE
+    last_peak_value = -1
+    starting_index = 60  # discard the first 60 rows (about 1s)
+    in_a_wave = False
+
+    # Find peaks
+    for i in range(len(tug_data) - 4):
+        orientation_stats.add_value(tug_data[i]['orADerMean'])
+
+        if i > starting_index:
+            tug_data_row = tug_data[i]
+
+            # A peak is detected if the value in the middle is greater than values before and after
+            is_peak = (
+                    tug_data_row['orADerMean'] >= tug_data[i - 1]['orADerMean'] and
+                    tug_data_row['orADerMean'] >= tug_data[i - 2]['orADerMean'] and
+                    tug_data_row['orADerMean'] >= tug_data[i - 3]['orADerMean'] and
+                    tug_data_row['orADerMean'] >= tug_data[i - 4]['orADerMean'] and
+                    tug_data_row['orADerMean'] >= tug_data[i + 1]['orADerMean'] and
+                    tug_data_row['orADerMean'] >= tug_data[i + 2]['orADerMean'] and
+                    tug_data_row['orADerMean'] >= tug_data[i + 3]['orADerMean'] and
+                    tug_data_row['orADerMean'] >= tug_data[i + 4]['orADerMean']
+            )
+
+            if is_peak:
+                # Candidate peak detected
+                if (last_peak_ms > 0) and (
+                        in_a_wave or (tug_data_row['msFromStart'] - last_peak_ms < PEAK_WINDOW_SIZE)):
+                    # Continuation of previous peak
+                    if tug_data_row['orADerMean'] > last_peak_value:
+                        last_peak_value = tug_data_row['orADerMean']
+                        last_peak_ms = tug_data_row['msFromStart']
+                        peaks[-1] = {
+                            'ms': last_peak_ms,
+                            'value': last_peak_value
+                        }
+                else:
+                    # New candidate peak
+                    last_peak_ms = tug_data_row['msFromStart']
+                    last_peak_value = tug_data_row['orADerMean']
+                    peaks.append({
+                        'ms': last_peak_ms,
+                        'value': last_peak_value
+                    })
+
+                if tug_data_row['orADerMean'] > wave_multiplier_threshold * orientation_stats.get_mean():
+                    in_a_wave = True
+
+            if tug_data_row['orADerMean'] < wave_multiplier_threshold * orientation_stats.get_mean():
+                in_a_wave = False
+
+    search_start_ms = tug_data[0]['msFromStart']
+    search_end_ms = tug_data[-1]['msFromStart']
+
+    if len(peaks) < 2:
+        print(f"Warning: Not enough orientation derivative peaks found: {len(peaks)}")
+        peak1, peak2 = None, None
+    else:
+        good_quality = True
+
+        # Find the two highest peaks, discard any peak earlier than 1/3 of total duration
+        peaks_sorted = sorted(peaks, key=lambda x: x['value'], reverse=True)
+        peak1, peak2 = None, None
+
+        for peak in peaks_sorted:
+            if peak['ms'] > tug_data[-1]['msFromStart'] / 3:
+                if peak1 is None:
+                    peak1 = peak
+                elif peak2 is None:
+                    peak2 = peak
+                    break
+
+        if peak1 and peak2:
+            # Swap peaks if needed (ensure peak1 comes before peak2)
+            if peak1['ms'] > peak2['ms']:
+                peak1, peak2 = peak2, peak1
+
+            # Identify quality of measurement
+            mean_orientation_derivative = orientation_stats.get_mean()
+            peaks_above_mean = [
+                p for p in peaks
+                if (p['ms'] > 2000) and (p['value'] > 1.5 * mean_orientation_derivative)
+            ]
+            peaks_above_mean_percentage = (len(peaks_above_mean) / len(peaks)) * 100
+            peak1_ratio = peak1['value'] / mean_orientation_derivative
+            peak2_ratio = peak2['value'] / mean_orientation_derivative
+
+            if peaks_above_mean_percentage > 50 or peak1_ratio < 2 or peak2_ratio < 2:
+                good_quality = False
+
+            backward_gait_duration = peak2['ms'] - peak1['ms']
+            standing_sitting_time = 2000
+            very_slow_test = backward_gait_duration > 4000
+
+            if good_quality and not very_slow_test:
+                # Hypothesize that forward and backward gait durations are similar
+                search_start_ms = peak1['ms'] - backward_gait_duration - standing_sitting_time
+                if search_start_ms < 0:
+                    search_start_ms = 0
+
+                search_end_ms = peak2['ms'] + standing_sitting_time
+                if search_end_ms > tug_data[-1]['msFromStart']:
+                    search_end_ms = tug_data[-1]['msFromStart']
+
+                print(f"->Good quality measurement, searching between {search_start_ms} and {search_end_ms}, "
+                      f"backward gait duration: {backward_gait_duration} ms")
+
+    return search_start_ms, search_end_ms, peak1, peak2, tug_data
+
+
 def get_TUG_duration_4(df):
     try:
         """
@@ -272,120 +393,7 @@ def get_TUG_duration_4(df):
         """
         df = add_tug_features(df)
 
-        orientation_stats = RollingStats()
-
-        PEAK_WINDOW_SIZE = 1000  # ms in which we look for orientation derivative peaks
-        wave_multiplier_threshold = 1.5  # multiplier of the mean orientation derivative
-
-        peaks = []
-        last_peak_ms = -PEAK_WINDOW_SIZE
-        last_peak_value = -1
-        starting_index = 60  # discard the first 60 rows (about 1s)
-        in_a_wave = False
-
-        # Convert dataframe to list of dicts for easier iteration
-        tug_data = df.to_dict('records')
-
-        # Find peaks
-        for i in range(len(tug_data) - 4):
-            orientation_stats.add_value(tug_data[i]['orADerMean'])
-
-            if i > starting_index:
-                tug_data_row = tug_data[i]
-
-                # A peak is detected if the value in the middle is greater than values before and after
-                is_peak = (
-                        tug_data_row['orADerMean'] >= tug_data[i - 1]['orADerMean'] and
-                        tug_data_row['orADerMean'] >= tug_data[i - 2]['orADerMean'] and
-                        tug_data_row['orADerMean'] >= tug_data[i - 3]['orADerMean'] and
-                        tug_data_row['orADerMean'] >= tug_data[i - 4]['orADerMean'] and
-                        tug_data_row['orADerMean'] >= tug_data[i + 1]['orADerMean'] and
-                        tug_data_row['orADerMean'] >= tug_data[i + 2]['orADerMean'] and
-                        tug_data_row['orADerMean'] >= tug_data[i + 3]['orADerMean'] and
-                        tug_data_row['orADerMean'] >= tug_data[i + 4]['orADerMean']
-                )
-
-                if is_peak:
-                    # Candidate peak detected
-                    if (last_peak_ms > 0) and (
-                            in_a_wave or (tug_data_row['msFromStart'] - last_peak_ms < PEAK_WINDOW_SIZE)):
-                        # Continuation of previous peak
-                        if tug_data_row['orADerMean'] > last_peak_value:
-                            last_peak_value = tug_data_row['orADerMean']
-                            last_peak_ms = tug_data_row['msFromStart']
-                            peaks[-1] = {
-                                'ms': last_peak_ms,
-                                'value': last_peak_value
-                            }
-                    else:
-                        # New candidate peak
-                        last_peak_ms = tug_data_row['msFromStart']
-                        last_peak_value = tug_data_row['orADerMean']
-                        peaks.append({
-                            'ms': last_peak_ms,
-                            'value': last_peak_value
-                        })
-
-                    if tug_data_row['orADerMean'] > wave_multiplier_threshold * orientation_stats.get_mean():
-                        in_a_wave = True
-
-                if tug_data_row['orADerMean'] < wave_multiplier_threshold * orientation_stats.get_mean():
-                    in_a_wave = False
-
-        search_start_ms = tug_data[0]['msFromStart']
-        search_end_ms = tug_data[-1]['msFromStart']
-
-        if len(peaks) < 2:
-            print(f"Warning: Not enough orientation derivative peaks found: {len(peaks)}")
-        else:
-            good_quality = True
-
-            # Find the two highest peaks, discard any peak earlier than 1/3 of total duration
-            peaks_sorted = sorted(peaks, key=lambda x: x['value'], reverse=True)
-            peak1, peak2 = None, None
-
-            for peak in peaks_sorted:
-                if peak['ms'] > tug_data[-1]['msFromStart'] / 3:
-                    if peak1 is None:
-                        peak1 = peak
-                    elif peak2 is None:
-                        peak2 = peak
-                        break
-
-            if peak1 and peak2:
-                # Swap peaks if needed (ensure peak1 comes before peak2)
-                if peak1['ms'] > peak2['ms']:
-                    peak1, peak2 = peak2, peak1
-
-                # Identify quality of measurement
-                mean_orientation_derivative = orientation_stats.get_mean()
-                peaks_above_mean = [
-                    p for p in peaks
-                    if (p['ms'] > 2000) and (p['value'] > 1.5 * mean_orientation_derivative)
-                ]
-                peaks_above_mean_percentage = (len(peaks_above_mean) / len(peaks)) * 100
-                peak1_ratio = peak1['value'] / mean_orientation_derivative
-                peak2_ratio = peak2['value'] / mean_orientation_derivative
-
-                if peaks_above_mean_percentage > 50 or peak1_ratio < 2 or peak2_ratio < 2:
-                    good_quality = False
-
-                backward_gait_duration = peak2['ms'] - peak1['ms']
-                standing_sitting_time = 2000
-                very_slow_test = backward_gait_duration > 4000
-
-                if good_quality and not very_slow_test:
-                    # Hypothesize that forward and backward gait durations are similar
-                    search_start_ms = peak1['ms'] - backward_gait_duration - standing_sitting_time
-                    if search_start_ms < 0:
-                        search_start_ms = 0
-
-                    search_end_ms = peak2['ms'] + standing_sitting_time
-                    if search_end_ms > tug_data[-1]['msFromStart']:
-                        search_end_ms = tug_data[-1]['msFromStart']
-
-                    print(f"->Good quality measurement, searching between {search_start_ms} and {search_end_ms}, "
-                          f"backward gait duration: {backward_gait_duration} ms")
+        search_start_ms, search_end_ms, peak1, peak2, tug_data = find_peaks_algo(df)
 
         # Detect activity start and end
         activity_threshold = 0.5

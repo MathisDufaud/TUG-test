@@ -21,7 +21,7 @@ if __name__ == "__main__":
     for a in all_tests:
         a.plot_labelling(method='labelling', plot=False)
 
-    utils_evaluation.evaluate_results(all_tests, eval_type='duration', gttype='gwalk',  method='labelling', dataset='pisa')
+    utils_evaluation.evaluate_results(all_tests, eval_type='duration', gttype='gwalk', method='labelling', dataset='pisa')
 
 
     print(1)

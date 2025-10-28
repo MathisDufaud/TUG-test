@@ -16,8 +16,12 @@ if __name__ == "__main__":
     all_tests_synergy = utils_parkapp.load_all_tests(dataset_id = 'synergy', context='supervised')
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp]))
 
-    if False:
-        utils_dataquality.observesingletests(all_tests, method='labelling')
+    if True:
+        utils_parkapp.tugt_overview_parkapp(all_tests, logging=False)
+
+    if True:
+        # Function to track comments for each test
+        utils_dataquality.observesingletests(all_tests, method='labelling', title='testssupervised_manual.csv')
 
     if True:
         utils_dataquality.compute_tests_stats(all_tests, stats_of_interest = ['entropy_acc', 'std_acc', 'entropy_rotrate', 'std_rotrate',

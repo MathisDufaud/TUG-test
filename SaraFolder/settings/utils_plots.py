@@ -17,30 +17,110 @@ def plot_training_history(history, title):
     val_loss = history.history.get('val_loss', [])
     epochs = range(1, len(loss) + 1)
 
-    # Create the figure
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,5))
+    if False:
+        # Create the figure
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,5))
 
-    # Plot accuracy
-    ax1.plot(epochs, acc, 'o-', label='Training Accuracy')
-    ax1.plot(epochs, val_acc, 'o-', label='Validation Accuracy')
-    ax1.set_title('Training vs Validation Accuracy')
-    ax1.set_xlabel('Epochs')
-    ax1.set_ylabel('Accuracy')
-    ax1.legend()
-    ax1.grid(True, linestyle='--', alpha=0.6)
+        # Plot accuracy
+        ax1.plot(epochs, acc, 'o-', label='Training Accuracy')
+        ax1.plot(epochs, val_acc, 'o-', label='Validation Accuracy')
+        ax1.set_title('Training vs Validation Accuracy')
+        ax1.set_xlabel('Epochs')
+        ax1.set_ylabel('Accuracy')
+        ax1.legend()
+        ax1.grid(True, linestyle='--', alpha=0.6)
 
-    # Plot loss
-    ax2.plot(epochs, loss, 'o-', label='Training Loss')
-    ax2.plot(epochs, val_loss, 'o-', label='Validation Loss')
-    ax2.set_title('Training vs Validation Loss')
-    ax2.set_xlabel('Epochs')
-    ax2.set_ylabel('Loss')
-    ax2.legend()
-    ax2.grid(True, linestyle='--', alpha=0.6)
+        # Plot loss
+        ax2.plot(epochs, loss, 'o-', label='Training Loss')
+        ax2.plot(epochs, val_loss, 'o-', label='Validation Loss')
+        ax2.set_title('Training vs Validation Loss')
+        ax2.set_xlabel('Epochs')
+        ax2.set_ylabel('Loss')
+        ax2.legend()
+        ax2.grid(True, linestyle='--', alpha=0.6)
 
-    plt.tight_layout()
-    plt.savefig(running_settings.figures_path + os.sep + title, dpi=400)
-    plt.show()
+        plt.tight_layout()
+        plt.savefig(running_settings.figures_all + os.sep + title, dpi=400)
+        plt.show()
+
+    try:
+        history_dict = history.history
+        # Create a 2x3 subplot figure
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        fig.suptitle('Complete Training History - All Metrics', fontsize=16, fontweight='bold', y=1.00)
+        epochs = np.arange(1, len(history_dict['loss']) + 1)
+        # Define colors
+        train_color = '#2E86AB'
+        val_color = '#A23B72'
+
+        # 1. Accuracy
+        ax = axes[0, 0]
+        ax.plot(epochs, history_dict['accuracy'], 'o-', color=train_color, linewidth=2, markersize=6, label='Training')
+        ax.plot(epochs, history_dict['val_accuracy'], 'o-', color=val_color, linewidth=2, markersize=6, label='Validation')
+        ax.set_title('Accuracy', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Accuracy')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        # 2. Loss
+        ax = axes[0, 1]
+        ax.plot(epochs, history_dict['loss'], 'o-', color=train_color, linewidth=2, markersize=6, label='Training')
+        ax.plot(epochs, history_dict['val_loss'], 'o-', color=val_color, linewidth=2, markersize=6, label='Validation')
+        ax.set_title('Loss', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        # 3. Precision
+        ax = axes[0, 2]
+        ax.plot(epochs, history_dict['precision'], 'o-', color=train_color, linewidth=2, markersize=6, label='Training')
+        ax.plot(epochs, history_dict['val_precision'], 'o-', color=val_color, linewidth=2, markersize=6, label='Validation')
+        ax.set_title('Precision', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Precision')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        # 4. Recall
+        ax = axes[1, 0]
+        ax.plot(epochs, history_dict['recall'], 'o-', color=train_color, linewidth=2, markersize=6, label='Training')
+        ax.plot(epochs, history_dict['val_recall'], 'o-', color=val_color, linewidth=2, markersize=6, label='Validation')
+        ax.set_title('Recall', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Recall')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        # 5. F1 Score (calculated from precision and recall)
+        ax = axes[1, 1]
+        train_f1 = [2 * (p * r) / (p + r) for p, r in zip(history_dict['precision'], history_dict['recall'])]
+        val_f1 = [2 * (p * r) / (p + r) for p, r in zip(history_dict['val_precision'], history_dict['val_recall'])]
+        ax.plot(epochs, train_f1, 'o-', color=train_color, linewidth=2, markersize=6, label='Training')
+        ax.plot(epochs, val_f1, 'o-', color=val_color, linewidth=2, markersize=6, label='Validation')
+        ax.set_title('F1 Score (Calculated)', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('F1 Score')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        # 6. Learning Rate
+        ax = axes[1, 2]
+        ax.plot(epochs, history_dict['lr'], 'o-', color='#F18F01', linewidth=2, markersize=6)
+        ax.set_title('Learning Rate', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Learning Rate')
+        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.ticklabel_format(style='scientific', axis='y', scilimits=(0, 0))
+
+        plt.tight_layout()
+
+        # Save the figure
+        # plt.savefig(running_settings.figures_all + os.sep + 'complete_training_metrics.png', dpi=400, bbox_inches='tight')
+        plt.show()
+    except:
+        print(1)
 
 
 def plot_labelling_tug(df_plot, res):
@@ -331,3 +411,127 @@ def plot_icc(icc_s, icctype='ICC2'):
                                                  pvalues, num_tests, num_participants):
         print(f"  {config}: ICC={icc:.3f}, p={pval:.4f}, "
               f"Tests={n_test}, Participants={n_part}")
+
+
+def extract_key(term, phase, history):
+    for key in history.keys():
+        if term in key and 'val' in key and 'val' in phase:
+            return key
+        elif term in key and 'val' not in key and 'val' not in phase:
+            return key
+
+
+def plot_all_training_history(fold_models, title):
+    # Create a 2x3 subplot figure
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    ax1 = axes[0, 0]
+    ax2 = axes[0, 1]
+    ax3 = axes[0, 2]
+    ax4 = axes[1, 0]
+    ax5 = axes[1, 1]
+    ax6 = axes[1, 2]
+
+    fig.suptitle('Complete Training History - All Metrics and Folds', fontsize=16, fontweight='bold', y=1.00)
+
+    # Pastel palette for folds
+    pastel_colors = ["#ef476f","#ffd166","#06d6a0","#118ab2","#073b4c"]
+    markersize = 10
+
+    # Extract training & validation metrics
+    for i, fold in enumerate(fold_models):
+        history = fold.model_history
+        loss = history.history.get('loss', [])
+        epochs = range(1, len(loss) + 1)
+        history_dict = history.history
+
+        precision_key = extract_key(term='precision', phase='', history=history_dict)
+        val_precision_key = extract_key(term='precision', phase='val', history=history_dict)
+        recall_key = extract_key(term='recall', phase='', history=history_dict)
+        val_recall_key = extract_key(term='recall', phase='val', history=history_dict)
+
+        # Get fold color
+        fold_color = pastel_colors[i % len(pastel_colors)]
+
+        # Create label for this fold
+        fold_label = f'Fold {i + 1}'
+
+        # 1. Accuracy
+        ax1.plot(epochs, history_dict['accuracy'], 'o-', color=fold_color, linewidth=2, markersize=markersize,
+                 label=f'{fold_label} Train')
+        ax1.plot(epochs, history_dict['val_accuracy'], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5,
+                  label=f'{fold_label} Val')
+        ax1.set_title('Accuracy', fontsize=12, fontweight='bold')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Accuracy')
+        ax1.grid(True, linestyle='--', alpha=0.6)
+
+        # 2. Loss
+        ax2.plot(epochs, history_dict['loss'], 'o-', color=fold_color, linewidth=2, markersize=markersize)
+        ax2.plot(epochs, history_dict['val_loss'], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
+        ax2.set_title('Loss', fontsize=12, fontweight='bold')
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel('Loss')
+        ax2.grid(True, linestyle='--', alpha=0.6)
+
+        # 3. Precision
+        ax3.plot(epochs, history_dict[precision_key], 'o-', color=fold_color, linewidth=2, markersize=markersize)
+        ax3.plot(epochs, history_dict[val_precision_key], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
+        ax3.set_title('Precision', fontsize=12, fontweight='bold')
+        ax3.set_xlabel('Epoch')
+        ax3.set_ylabel('Precision')
+        ax3.grid(True, linestyle='--', alpha=0.6)
+
+        # 4. Recall
+        ax4.plot(epochs, history_dict[recall_key], 'o-', color=fold_color, linewidth=2, markersize=markersize)
+        ax4.plot(epochs, history_dict[val_recall_key], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
+        ax4.set_title('Recall', fontsize=12, fontweight='bold')
+        ax4.set_xlabel('Epoch')
+        ax4.set_ylabel('Recall')
+        ax4.grid(True, linestyle='--', alpha=0.6)
+
+        # 5. F1 Score (calculated from precision and recall)
+        train_f1 = [2 * (p * r) / (p + r) if (p + r) > 0 else 0 for p, r in
+                    zip(history_dict[precision_key], history_dict[recall_key])]
+        val_f1 = [2 * (p * r) / (p + r) if (p + r) > 0 else 0 for p, r in
+                  zip(history_dict[val_precision_key], history_dict[val_recall_key])]
+        ax5.plot(epochs, train_f1, 'o-', color=fold_color, linewidth=2, markersize=markersize)
+        ax5.plot(epochs, val_f1, '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
+        ax5.set_title('F1 Score (Calculated)', fontsize=12, fontweight='bold')
+        ax5.set_xlabel('Epoch')
+        ax5.set_ylabel('F1 Score')
+        ax5.grid(True, linestyle='--', alpha=0.6)
+
+        # 6. Learning Rate
+        ax6.plot(epochs, history_dict['lr'], 'o-', color=fold_color, linewidth=2, markersize=markersize)
+        ax6.set_title('Learning Rate', fontsize=12, fontweight='bold')
+        ax6.set_xlabel('Epoch')
+        ax6.set_ylabel('Learning Rate')
+        ax6.grid(True, linestyle='--', alpha=0.6)
+        ax6.ticklabel_format(style='scientific', axis='y', scilimits=(0, 0))
+
+    # Create custom legend elements
+    from matplotlib.lines import Line2D
+
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='gray', linewidth=2, markersize=markersize,
+               label='Training', markerfacecolor='gray'),
+        Line2D([0], [0], marker='*', color='gray', linewidth=2, markersize=markersize+1.5,
+               label='Validation', markerfacecolor='gray')
+    ]
+
+    # Add fold colors to legend
+    for i, fold in enumerate(fold_models):
+        fold_color = pastel_colors[i % len(pastel_colors)]
+        legend_elements.append(
+            Line2D([0], [0], color=fold_color, linewidth=3, label=f'Fold {i + 1}')
+        )
+
+    # Add legend to the first subplot
+    ax1.legend(handles=legend_elements, loc='best', framealpha=0.9, fontsize=9)
+
+    plt.tight_layout()
+
+    # Save the figure
+    plt.savefig(running_settings.figures_all + os.sep + title, dpi=400, bbox_inches='tight')
+    plt.show()
+    return None

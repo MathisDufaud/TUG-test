@@ -10,8 +10,16 @@ import matplotlib.pyplot as plt
 plt.ion()
 from SaraFolder.settings import running_settings
 
+def loading_previous_comments(title):
 
-def observesingletests(all_tests, method):
+    if title in os.listdir(running_settings.results_all):
+        df_tests = pd.read_csv(running_settings.results_all + os.sep + title, index_col=0)
+        print(f"Loaded existing comments from {running_settings.results_all + os.sep + title}")
+    else:
+        df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual', 'gt gwalk', 'gt manual', 'secStart', 'secEnd'])
+    return df_tests
+
+def observesingletests(all_tests, method, title):
     """
     Args:
         all_tests: classes TUG test.
@@ -22,9 +30,15 @@ def observesingletests(all_tests, method):
         a pandas dataframe with index the user_id + str(session_id), columns ['comments', 'whichstrangesignal']
 
     """
-    df_tests = pd.DataFrame(columns=['comments', 'whichstrangesignal', 'error tot gwalk ', 'error tot manual', 'gt gwalk', 'gt manual'])
+    df_tests = loading_previous_comments(title)
 
     for test in all_tests:
+        indexid = test.user_id + '_' + str(test.session_id)
+
+        if indexid in df_tests.index:
+            print(f"Skipping {indexid}, already in dataframe.")
+            continue
+
         # Plot data
         test.plot_raw_data()
         test.plot_labelling(method=method, plot=False)
@@ -51,24 +65,143 @@ def observesingletests(all_tests, method):
 
         print(f"GT gwalk: {gtg}, GT manual: {gtm}")
 
-        indexid = test.user_id + '_' + str(test.session_id)
-
         # Get user input for comments
         comment = input(f"Enter comment for test {indexid}: ")
         which_strange = input(f"Which strange signal for test {indexid}: ")
 
-        # Add row to dataframe
-        df_tests.loc[indexid] = [comment, which_strange, error_tot_duration_gwalk, error_tot_duration_manual, gtg, gtm]
+        # Select with cursor the start and end of the TUG test (x axis of the figure)
+        # Select with cursor the start and end of the TUG test (x axis of the figure)
+        print("Click on the plot to select START point (x-axis)...")
+        plt.draw()
+        start_point = plt.ginput(1, timeout=0)  # Wait for 1 click, no timeout
+        if start_point:
+            secStart = start_point[0][0]  # Extract x-coordinate
+            # Draw vertical line at start
+            ax = plt.gca()
+            line_start = ax.axvline(x=secStart, color='green', linestyle='--', linewidth=2, label='Start')
+            plt.draw()
+        else:
+            secStart = None
 
-        print(f"Added comments for {indexid}\n")
+        print("Click on the plot to select END point (x-axis)...")
+        plt.draw()
+        end_point = plt.ginput(1, timeout=0)  # Wait for 1 click, no timeout
+        if end_point:
+            secEnd = end_point[0][0]  # Extract x-coordinate
+            # Draw vertical line at end
+            line_end = ax.axvline(x=secEnd, color='red', linestyle='--', linewidth=2, label='End')
+            plt.legend()
+            plt.draw()
+            plt.pause(1)  # Show the selected points for 1 second
+        else:
+            secEnd = None
+
+        # Add row to dataframe
+        df_tests.loc[indexid] = [comment, which_strange, error_tot_duration_gwalk, error_tot_duration_manual, gtg, gtm,
+                                 secStart, secEnd]
+
+        print(f"Added comments for {indexid} - Start: {secStart}, End: {secEnd}\n")
         plt.close('all')
 
-    # Save dataframe to CSV
-    csvpath = running_settings.results_all + os.sep + 'testssupervised_comments.csv'
+        # Save dataframe to CSV
+    df_tests['gtManualS'] = df_tests['secEnd'] - df_tests['secStart']
+    csvpath = running_settings.results_all + os.sep + title
     df_tests.to_csv(csvpath, index=True)
     print(f"Saved comments to {csvpath}")
 
-    return None
+    return df_tests
+
+
+def define_start_end(all_tests, method, title):
+    """
+    Args:
+        all_tests: classes TUG test.
+
+    I want to plot each row data and be able to write a comment for that test that goes into the pd dataframe at each iteration
+
+    Returns:
+        a pandas dataframe with index the user_id + str(session_id), columns ['comments', 'whichstrangesignal']
+
+    """
+    if title in os.listdir(running_settings.results_all):
+        df_tests = pd.read_csv(running_settings.results_all + os.sep + title, index_col=0)
+        print(f"Loaded existing comments from {running_settings.results_all + os.sep + title}")
+    else:
+        df_tests = pd.DataFrame(columns=['error tot gwalk ', 'error tot manual', 'gt gwalk', 'gt manual', 'secStart', 'secEnd'])
+
+    for test in all_tests:
+        indexid = test.user_id + '_' + str(test.session_id)
+
+        if indexid in df_tests.index:
+            print(f"Skipping {indexid}, already in dataframe.")
+            continue
+
+        # Plot data
+        test.plot_raw_data()
+        test.plot_labelling(method=method, plot=False)
+
+        plt.draw()
+        plt.pause(0.5)  # Pause for 0.5 seconds
+
+        gtg = test.gt_total_gwalk
+        if gtg > 5000:
+            gtg = gtg / 1000
+        gtm = test.gt_total_manual
+        if gtm > 5000:
+            gtm = gtm / 1000
+
+        if not isinstance(test.results[method], str):
+            error_tot_duration_gwalk = (test.results[method]['t_end'] - test.results[method]['t_start']) - gtg
+            error_tot_duration_manual = (test.results[method]['t_end'] - test.results[method]['t_start']) - gtm
+            print(f"Error with gwalk: {np.round(error_tot_duration_gwalk, 2)}, error with manual: {np.round(error_tot_duration_manual, 2)}")
+
+        else:
+            print(f"Result: {test.results[method]}")
+            error_tot_duration_gwalk = test.results[method]
+            error_tot_duration_manual = test.results[method]
+
+        print(f"GT gwalk: {gtg}, GT manual: {gtm}")
+
+        # Select with cursor the start and end of the TUG test (x axis of the figure)
+        print("Click on the plot to select START point (x-axis)...")
+        plt.draw()
+        start_point = plt.ginput(1, timeout=0)  # Wait for 1 click, no timeout
+        if start_point:
+            secStart = start_point[0][0]  # Extract x-coordinate
+            # Draw vertical line at start
+            ax = plt.gca()
+            line_start = ax.axvline(x=secStart, color='green', linestyle='--', linewidth=2, label='Start')
+            plt.draw()
+        else:
+            secStart = None
+
+        print("Click on the plot to select END point (x-axis)...")
+        plt.draw()
+        end_point = plt.ginput(1, timeout=0)  # Wait for 1 click, no timeout
+        if end_point:
+            secEnd = end_point[0][0]  # Extract x-coordinate
+            # Draw vertical line at end
+            line_end = ax.axvline(x=secEnd, color='red', linestyle='--', linewidth=2, label='End')
+            plt.legend()
+            plt.draw()
+            plt.pause(1)  # Show the selected points for 1 second
+        else:
+            secEnd = None
+
+        # Add row to dataframe
+        df_tests.loc[indexid] = [error_tot_duration_gwalk, error_tot_duration_manual, gtg, gtm, secStart, secEnd]
+
+        print(f"Added comments for {indexid} - Start: {secStart}, End: {secEnd}\n")
+        plt.close('all')
+
+        # Save dataframe to CSV
+    df_tests['gtManualS'] = df_tests['secEnd'] - df_tests['secStart']
+    csvpath = running_settings.results_all + os.sep + title
+    df_tests.to_csv(csvpath, index=True)
+    print(f"Saved comments to {csvpath}")
+
+    return df_tests
+
 
 
 def dict_to_plot_stats(all_tests, stats_of_interest):
@@ -211,3 +344,4 @@ def error_vs_stats(all_tests, stats_of_interest):
 
 
     return None
+

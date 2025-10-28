@@ -206,12 +206,31 @@ def labelling_phases(df_fusion):
     return df_fusion
 
 
+def investigate_skipped_files(df_orientation, df_motion):
+    df_final = setup_df(df_motion, df_orientation)
+    df_fusion = df_final
+
+    times = pd.read_csv(base_path + os.sep + "manual_times.csv", index_col=0)
+    skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
+    dict_times = times.transpose().to_dict()
+    for key in skipped:
+        if key not in dict_times:
+            del dict_times[key]
+    times_gwalk = pd.read_excel(base_path + os.sep + "gwalk_times.xlsx", index_col = 0)
+    times_gwalk = times_gwalk.transpose().to_dict()
+
+    df = labelling_phases(df_fusion)
+    pass
+
+
 def load_fusiondf(motion_files, orientation_files):
     skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
 
     df_fusion = {}
     for key in list(motion_files.keys()):
         if key[:-2] in skipped:
+            if True:
+                investigate_skipped_files(orientation_files[key], motion_files[key])
             del orientation_files[key]
             del motion_files[key]
         else:
@@ -407,6 +426,7 @@ def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp'):
 
         test.raw_data = t
         test.processed_data = t
+        test.processed_data = test.processed_data.dropna().reset_index(drop=True)
 
         all_tests.append(test)
 
@@ -432,11 +452,14 @@ def load_all_tests(dataset_id, context='supervised'):
             if dataset_id == 'synergy':
                 if 'synergy_tests.pickle' in os.listdir(running_settings.data_synpisa):
                     with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'rb') as handle:
-                        all_tests = pickle.load(handle)
+                        tests = pickle.load(handle)
+                    all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
                 else:
                     tests = utils_pisatugloaders.load_synpisatests()
                     tests = [test for test in tests if test.dataset_id == 'synergy']
-                    all_tests = return_context_tests(tests, context)
+                    tests = return_context_tests(tests, context)
+                    all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
+
                     with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'wb') as handle:
                         pickle.dump(all_tests, handle)
 
@@ -450,7 +473,5 @@ def load_all_tests(dataset_id, context='supervised'):
                     all_tests = return_context_tests(tests, context)
                     with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'wb') as handle:
                         pickle.dump(all_tests, handle)
-
-
 
     return all_tests
