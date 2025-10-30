@@ -5,18 +5,24 @@ import matplotlib
 import numpy as np
 
 matplotlib.use('TkAgg')
-import pandas as pd
 import matplotlib.pyplot as plt
 plt.ion()
-from SaraFolder.settings import running_settings
-
-def loading_previous_comments(title):
+from SaraFolder.settings import running_settings, utils_labelling, utils_evaluation
+import pandas as pd
+import matplotlib.pyplot as plt
+from collections import Counter
+import seaborn as sns
+from scipy import stats as scipy_stats
+def loading_previous_comments(title, type):
 
     if title in os.listdir(running_settings.results_all):
         df_tests = pd.read_csv(running_settings.results_all + os.sep + title, index_col=0)
         print(f"Loaded existing comments from {running_settings.results_all + os.sep + title}")
     else:
-        df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual', 'gt gwalk', 'gt manual', 'secStart', 'secEnd'])
+        if type == 'alltests':
+            df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual', 'gt gwalk', 'gt manual', 'secStart', 'secEnd'])
+        elif type == 'skipped':
+            df_tests = pd.DataFrame(columns=['comment', 'context', 'secStart', 'secEnd'])
     return df_tests
 
 def observesingletests(all_tests, method, title):
@@ -30,7 +36,7 @@ def observesingletests(all_tests, method, title):
         a pandas dataframe with index the user_id + str(session_id), columns ['comments', 'whichstrangesignal']
 
     """
-    df_tests = loading_previous_comments(title)
+    df_tests = loading_previous_comments(title, type='alltests')
 
     for test in all_tests:
         indexid = test.user_id + '_' + str(test.session_id)
@@ -99,6 +105,83 @@ def observesingletests(all_tests, method, title):
         # Add row to dataframe
         df_tests.loc[indexid] = [comment, which_strange, error_tot_duration_gwalk, error_tot_duration_manual, gtg, gtm,
                                  secStart, secEnd]
+
+        print(f"Added comments for {indexid} - Start: {secStart}, End: {secEnd}\n")
+        plt.close('all')
+
+        # Save dataframe to CSV
+    df_tests['gtManualS'] = df_tests['secEnd'] - df_tests['secStart']
+    csvpath = running_settings.results_all + os.sep + title
+    df_tests.to_csv(csvpath, index=True)
+    print(f"Saved comments to {csvpath}")
+
+    return df_tests
+
+def observesingletests_skipped(all_tests, method, title):
+    """
+    Args:
+        all_tests: classes TUG test.
+
+    I want to plot each row data and be able to write a comment for that test that goes into the pd dataframe at each iteration
+
+    Returns:
+        a pandas dataframe with index the user_id + str(session_id), columns ['comments', 'whichstrangesignal']
+
+    """
+    df_tests = loading_previous_comments(title, type='skipped')
+
+    for k, test in all_tests.items():
+        context = k[-1]
+        if context == 'u':
+            continue
+        indexid = test.user_id + '_' + str(test.session_id)
+        test.dataset_id = 'parkapp_skipped'
+        if indexid in df_tests.index:
+            print(f"Skipping {indexid}, already in dataframe.")
+            continue
+
+        # Plot data
+        test.plot_raw_data()
+        plt.title(k)
+        plt.draw()
+        plt.pause(0.5)  # Pause for 0.5 seconds
+
+        # Get user input for comments
+        comment = input(f"Enter comment for test {k}: ")
+
+        # Select with cursor the start and end of the TUG test (x axis of the figure)
+        # Select with cursor the start and end of the TUG test (x axis of the figure)
+        print("Click on the plot to select START point (x-axis)...")
+        plt.draw()
+        start_point = plt.ginput(1, timeout=0)  # Wait for 1 click, no timeout
+        if start_point:
+            secStart = start_point[0][0]  # Extract x-coordinate
+            # Draw vertical line at start
+            ax = plt.gca()
+            line_start = ax.axvline(x=secStart, color='green', linestyle='--', linewidth=2, label='Start')
+            plt.draw()
+        else:
+            secStart = None
+
+        print("Click on the plot to select END point (x-axis)...")
+        plt.draw()
+        end_point = plt.ginput(1, timeout=0)  # Wait for 1 click, no timeout
+        if end_point:
+            secEnd = end_point[0][0]  # Extract x-coordinate
+            # Draw vertical line at end
+            line_end = ax.axvline(x=secEnd, color='red', linestyle='--', linewidth=2, label='End')
+            plt.legend()
+            plt.draw()
+            plt.pause(1)  # Show the selected points for 1 second
+        else:
+            secEnd = None
+
+        # Add row to dataframe
+        if len(df_tests.columns) == 4:
+            df_tests.loc[indexid] = [comment, context, secStart, secEnd]
+        else:
+            df_tests.loc[indexid] = [comment, context, secStart, secEnd, 0]
+
 
         print(f"Added comments for {indexid} - Start: {secStart}, End: {secEnd}\n")
         plt.close('all')
@@ -215,7 +298,7 @@ def dict_to_plot_stats(all_tests, stats_of_interest):
     for test in all_tests:
         dict_to_plot['dataset'].append(test.dataset_id)
         dict_to_plot['gtGwalk'].append(test.gt_total_gwalk*1000 if test.gt_total_gwalk < 5000 else test.gt_total_gwalk)
-        dict_to_plot['gtManual'].append(test.gt_total_manual*1000 if test.gt_total_manual < 5000 else test.gt_total_manual)
+        dict_to_plot['gtManual'].append(test.gt_total_manual*1000 if test.gt_total_manual is not None and test.gt_total_manual < 5000 else test.gt_total_manual)
         dict_to_plot['estimation'].append(test.results['labelling'] if not isinstance(test.results['labelling'], str) else None)
         dict_to_plot['estDuration'].append((test.results['labelling']['t_end'] - test.results['labelling']['t_start']) if not isinstance(test.results['labelling'], str) else None)
         for stat in stats_of_interest:
@@ -227,15 +310,36 @@ def dict_to_plot_stats(all_tests, stats_of_interest):
     return df_plot
 
 
-def compute_tests_stats(all_tests, stats_of_interest):
+def compute_stats_tests(all_tests):
     for test in all_tests:
         test.plot_labelling(method='labelling', plot=False)
         test.data_quality_investigation(plot=False)
+    pass
+
+def compute_error_tests(all_tests, method):
+    all_results, all_gts = utils_evaluation.define_res_gts(all_tests, gttype='gwalk', method=method)
+    all_errors = {}
+    for k in all_results.keys():
+        key = k[:-2]
+        duration = all_results[k]['t_end'] - all_results[k]['t_start']
+        if duration > 1000:
+            duration = duration / 1000
+        gt = all_gts[k]
+        if isinstance(gt, dict): # TODO careful here NO MANUAL GT!
+            gt = gt['t_end'] - gt['t_start']
+        if gt>1000:
+            gt=gt/1000
+        all_errors[key] = duration - gt
+
+    return all_errors
+
+def compute_tests_stats(all_tests, stats_of_interest):
+
+    compute_stats_tests(all_tests)
 
     if True:
         # Plot statistics across all tests
         df_plot = dict_to_plot_stats(all_tests, stats_of_interest)
-
 
         fig = plt.figure(figsize=(15, 10))
         for i, stat in enumerate(stats_of_interest):
@@ -289,14 +393,18 @@ def compute_test_stats(df):
     dict_stats['std_rotrate'] = float(df['rotRate_beta_gamma'].std())
     dict_stats['var_rotrate'] = float(df['rotRate_beta_gamma'].var())
     dict_stats['median_rotrate'] = float(df['rotRate_beta_gamma'].median())
+    dict_stats['autocorr1sec_acc'] = float(df['sqrt(X²+Y²+Z²)'].autocorr(lag=60))
+    dict_stats['autocorr1sec_alpha'] = float(df['alpha'].autocorr(lag=60))
+    dict_stats['autocorr1sec_beta'] = float(df['beta'].autocorr(lag=60))
     dict_stats['autocorr2sec_beta'] = float(df['beta'].autocorr(lag=120))
     dict_stats['autocorr2sec_alpha'] = float(df['alpha'].autocorr(lag=120))
     dict_stats['autocorr2sec_acc'] = float(df['sqrt(X²+Y²+Z²)'].autocorr(lag=120))
-    dict_stats['entropy_alpha'] = float(calculate_entropy(df['alpha']))
-    dict_stats['entropy_beta'] = float(calculate_entropy(df['beta']))
     dict_stats['autocorr5sec_acc'] = float(df['sqrt(X²+Y²+Z²)'].autocorr(lag=300))
     dict_stats['autocorr5sec_alpha'] = float(df['alpha'].autocorr(lag=300))
     dict_stats['autocorr5sec_beta'] = float(df['beta'].autocorr(lag=300))
+    dict_stats['entropy_alpha'] = float(calculate_entropy(df['alpha']))
+    dict_stats['entropy_beta'] = float(calculate_entropy(df['beta']))
+
 
     return dict_stats
 
@@ -345,3 +453,914 @@ def error_vs_stats(all_tests, stats_of_interest):
 
     return None
 
+
+def check_signalvariability(df, cols, threshold):
+    # Signal variability - check if there's meaningful variation in the data
+    acc_std = df[cols].std().mean()
+    if acc_std < threshold:  # Threshold for minimal variation
+        quality = 'Low signal variability/'
+        print(f"{quality} for {cols} with threshold {threshold}")
+        return quality
+    else:
+        return ''
+
+
+def quality_assessment(df, dataset_id):
+    df, quality = utils_labelling.check_emptiness_3sec(df, dataset_id)
+    if isinstance(df, str):
+        return df, quality
+
+    quality += check_signalvariability(df, cols=['acc.x', 'acc.y', 'acc.z'], threshold=0.8)
+    quality += check_signalvariability(df, cols=['sqrt(X²+Y²+Z²)'], threshold=0.8)
+    quality += check_signalvariability(df, cols=['alpha', 'beta', 'gamma'], threshold=0.5)
+    quality += check_signalvariability(df, cols=['rotRate.alpha', 'rotRate.beta', 'rotRate.gamma'], threshold=0.5)
+
+    if 'Low signal variability' in quality:
+        utils_labelling.plot_faulty_signal(df, 'quality check')
+
+
+    # Sampling frequency - not less than 30 samples/second
+    # Calculate time span in seconds
+    time_span = (df['msFromStart'].max() - df['msFromStart'].min()) / 1000.0
+    if time_span > 0:
+        sampling_freq = len(df) / time_span
+        if sampling_freq < 30:
+            quality += 'Not valid sampling frequency/'
+
+    # Test duration - not less than 3 seconds, not more than 50 seconds
+    duration = (df['msFromStart'].max() - df['msFromStart'].min()) / 1000.0
+    if duration < 3:
+        quality += 'Too short duration/'
+    elif duration > 35:
+        quality += 'Too long duration/'
+
+    return quality
+
+def get_quality_all(all_tests, method):
+    quality_all = {}
+    for test in all_tests:
+        testid = test.user_id + '_' + str(test.session_id)
+        quality_all[testid] = test.quality['basic'] + test.quality[method]
+    return quality_all
+
+def observe_qualityvariable(all_tests, method='labelling'):
+
+    quality_all = get_quality_all(all_tests, method)
+
+    summarize_quality_issues(quality_all)
+    low_var_datasets = get_datasets_with_issue(quality_all, 'Low signal variability')
+    fig = plot_quality_overview(quality_all)
+    plt.show()
+    comparison = compare_sources(quality_all)
+    return None
+
+def parse_quality_issues(quality_all):
+    """
+    Parse quality dictionary and extract issue types for each dataset.
+
+    Parameters:
+    -----------
+    quality_all : dict
+        Dictionary with dataset_id as keys and quality strings as values
+
+    Returns:
+    --------
+    pd.DataFrame with columns: dataset_id, dataset_source, all_issues, issue_list
+    """
+    records = []
+
+    for dataset_id, quality_str in quality_all.items():
+        # Extract dataset source (synergy, pisa, parkapp)
+        source = dataset_id.split('_')[1] if '_' in dataset_id else 'unknown'
+
+        # Split quality string by '/' and filter out empty strings and 'okresults'
+        issues = [issue.strip() for issue in quality_str.split('/')
+                  if issue.strip() and issue.strip() != 'okresults']
+
+        records.append({
+            'dataset_id': dataset_id,
+            'dataset_source': source,
+            'all_issues': quality_str,
+            'issue_list': issues,
+            'num_issues': len(issues),
+            'has_issues': len(issues) > 0
+        })
+
+    return pd.DataFrame(records)
+
+
+def summarize_quality_issues(quality_all):
+    """
+    Print summary statistics of quality issues.
+    """
+    df = parse_quality_issues(quality_all)
+
+    print("=" * 70)
+    print("QUALITY ASSESSMENT SUMMARY")
+    print("=" * 70)
+    print(f"\nTotal datasets: {len(df)}")
+    print(f"Datasets with issues: {df['has_issues'].sum()} ({df['has_issues'].sum() / len(df) * 100:.1f}%)")
+    print(f"Datasets without issues: {(~df['has_issues']).sum()} ({(~df['has_issues']).sum() / len(df) * 100:.1f}%)")
+
+    print("\n" + "-" * 70)
+    print("BREAKDOWN BY SOURCE")
+    print("-" * 70)
+    source_summary = df.groupby('dataset_source').agg({
+        'dataset_id': 'count',
+        'has_issues': 'sum'
+    }).rename(columns={'dataset_id': 'total', 'has_issues': 'with_issues'})
+    source_summary['without_issues'] = source_summary['total'] - source_summary['with_issues']
+    source_summary['issue_rate_%'] = (source_summary['with_issues'] / source_summary['total'] * 100).round(1)
+    print(source_summary)
+
+    print("\n" + "-" * 70)
+    print("MOST COMMON ISSUES")
+    print("-" * 70)
+    all_issues = []
+    for issues in df['issue_list']:
+        all_issues.extend(issues)
+
+    issue_counts = Counter(all_issues)
+    for issue, count in issue_counts.most_common():
+        print(f"{count:3d} ({count / len(df) * 100:5.1f}%) - {issue}")
+
+    return df
+
+
+def plot_quality_overview(quality_all, figsize=(14, 10)):
+    """
+    Create comprehensive visualization of quality issues.
+    """
+    df = parse_quality_issues(quality_all)
+
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    fig.suptitle('Quality Assessment Overview', fontsize=16, fontweight='bold')
+
+    # 1. Overall pass/fail pie chart
+    ax1 = axes[0, 0]
+    pass_fail = df['has_issues'].value_counts()
+    colors = ['#2ecc71', '#e74c3c']
+    labels = ['No Issues', 'Has Issues']
+    ax1.pie([pass_fail.get(False, 0), pass_fail.get(True, 0)],
+            labels=labels, autopct='%1.1f%%', colors=colors, startangle=90)
+    ax1.set_title('Overall Dataset Quality')
+
+    # 2. Issues by source
+    ax2 = axes[0, 1]
+    source_issues = df.groupby(['dataset_source', 'has_issues']).size().unstack(fill_value=0)
+    source_issues.plot(kind='bar', stacked=True, ax=ax2, color=['#2ecc71', '#e74c3c'])
+    ax2.set_title('Quality by Data Source')
+    ax2.set_xlabel('Data Source')
+    ax2.set_ylabel('Number of Datasets')
+    ax2.legend(['No Issues', 'Has Issues'], loc='upper right')
+    ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45)
+
+    # 3. Issue type frequency
+    ax3 = axes[1, 0]
+    all_issues = []
+    for issues in df['issue_list']:
+        all_issues.extend(issues)
+
+    issue_counts = Counter(all_issues)
+    issue_df = pd.DataFrame(issue_counts.most_common(), columns=['Issue', 'Count'])
+
+    if len(issue_df) > 0:
+        ax3.barh(range(len(issue_df)), issue_df['Count'], color='#3498db')
+        ax3.set_yticks(range(len(issue_df)))
+        ax3.set_yticklabels(issue_df['Issue'], fontsize=9)
+        ax3.set_xlabel('Frequency')
+        ax3.set_title('Issue Type Distribution')
+        ax3.invert_yaxis()
+
+    # 4. Number of issues per dataset
+    ax4 = axes[1, 1]
+    issue_dist = df['num_issues'].value_counts().sort_index()
+    ax4.bar(issue_dist.index, issue_dist.values, color='#9b59b6')
+    ax4.set_xlabel('Number of Issues per Dataset')
+    ax4.set_ylabel('Frequency')
+    ax4.set_title('Distribution of Issue Count')
+    ax4.set_xticks(range(int(df['num_issues'].max()) + 1))
+
+    plt.tight_layout()
+    return fig
+
+
+def get_datasets_with_issue(quality_all, issue_keyword):
+    """
+    Find all datasets that have a specific issue.
+
+    Parameters:
+    -----------
+    quality_all : dict
+        Quality dictionary
+    issue_keyword : str
+        Keyword to search for (e.g., 'Low signal variability')
+
+    Returns:
+    --------
+    list of dataset_ids that contain the issue
+    """
+    df = parse_quality_issues(quality_all)
+
+    matching_datasets = []
+    for _, row in df.iterrows():
+        if any(issue_keyword.lower() in issue.lower() for issue in row['issue_list']):
+            matching_datasets.append(row['dataset_id'])
+
+    print(f"Found {len(matching_datasets)} datasets with '{issue_keyword}':")
+    for ds in matching_datasets:
+        print(f"  - {ds}")
+
+    return matching_datasets
+
+
+def compare_sources(quality_all):
+    """
+    Compare quality metrics across different data sources.
+    """
+    df = parse_quality_issues(quality_all)
+
+    # Get all unique issues
+    all_issues = set()
+    for issues in df['issue_list']:
+        all_issues.update(issues)
+
+    # Create comparison matrix
+    comparison = []
+    for source in df['dataset_source'].unique():
+        source_df = df[df['dataset_source'] == source]
+        row = {'source': source, 'total': len(source_df)}
+
+        for issue in all_issues:
+            count = sum(any(issue in item for item in row['issue_list'])
+                        for _, row in source_df.iterrows())
+            row[issue] = count
+
+        comparison.append(row)
+
+    comparison_df = pd.DataFrame(comparison).set_index('source')
+
+    print("\nIssue Frequency by Data Source:")
+    print("=" * 70)
+    print(comparison_df.to_string())
+
+    return comparison_df
+
+
+def get_stats_all(all_tests, method):
+    quality_all = {}
+    for test in all_tests:
+        testid = test.user_id + '_' + str(test.session_id)
+        quality_all[testid] = test.data_quality_stats
+    return quality_all
+
+
+def quality_stats(all_tests):
+    method = 'labelling'  # darioalgo or labelling
+    utils_labelling.labelling_acrossall(all_tests, method=method)
+    compute_stats_tests(all_tests)
+
+    quality_all = get_quality_all(all_tests, method)
+    stats_all = get_stats_all(all_tests, method)
+
+    df = prepare_quality_stats_dataframe(quality_all, stats_all)
+
+    # Select key statistics for visualization
+    key_stats = ['entropy_acc',  'entropy_rotrate',
+                 'autocorr2sec_acc', 'autocorr2sec_alpha',
+                 'autocorr2sec_beta', 'entropy_alpha', 'entropy_beta',
+                 'autocorr5sec_alpha', 'autocorr5sec_beta','autocorr5sec_acc','autocorr1sec_acc', 'autocorr1sec_alpha', 'autocorr1sec_beta']
+
+    key_stats = [s for s in key_stats if s in df.columns]
+
+    fig1, df = plot_quality_stats_comparison(df, key_stats=key_stats)
+    fig2, corr = plot_correlation_heatmap(quality_all, stats_all)
+    results = statistical_comparison_by_issue(quality_all, stats_all)
+    fig3 = plot_specific_issue_comparison(quality_all, stats_all, 'has_low_signal_variability')
+
+    return None
+
+def quality_error(all_tests):
+    method = 'labelling'  # darioalgo or labelling
+    utils_labelling.labelling_acrossall(all_tests, method=method)
+    error_all = compute_error_tests(all_tests, method='labelling')
+
+    quality_all = get_quality_all(all_tests, method)
+
+    df = prepare_quality_error_dataframe1(quality_all, error_all)
+
+    # Select key statistics for visualization
+    key_stats = ['entropy_acc',  'entropy_rotrate',
+                 'autocorr2sec_acc', 'autocorr2sec_alpha',
+                 'autocorr2sec_beta', 'entropy_alpha', 'entropy_beta',
+                 'autocorr5sec_alpha', 'autocorr5sec_beta','autocorr5sec_acc','autocorr1sec_acc', 'autocorr1sec_alpha', 'autocorr1sec_beta']
+
+    key_stats = [s for s in key_stats if s in df.columns]
+
+    fig1, df = plot_error_by_quality(df)
+    df_summary = error_summary_by_quality(df)
+    fig2 = plot_error_distribution(df)
+    corr_df = correlation_analysis(df)
+    problematic = identify_problematic_datasets(df, error_threshold=1.5)
+
+    return None
+
+
+def prepare_quality_stats_dataframe(quality_all, stats_all):
+    """
+    Combine quality and stats dictionaries into a single DataFrame.
+
+    Parameters:
+    -----------
+    quality_all : dict
+        Dictionary with dataset_id as keys and quality strings as values
+    stats_all : dict
+        Dictionary with dataset_id as keys and statistics dictionaries as values
+
+    Returns:
+    --------
+    pd.DataFrame with quality categories and statistics
+    """
+    records = []
+
+    for dataset_id in quality_all.keys():
+        if dataset_id not in stats_all:
+            continue
+
+        # Parse quality string
+        quality_str = quality_all[dataset_id]
+        issues = [issue.strip() for issue in quality_str.split('/')
+                  if issue.strip() and issue.strip() != 'okresults']
+
+        # Create record
+        record = {'dataset_id': dataset_id}
+
+        # Add binary flags for each issue type
+        record['has_low_signal_variability'] = any('Low signal variability' in issue for issue in issues)
+        record['has_no_turns'] = any('No turns found' in issue for issue in issues)
+        record['has_peaks_issue'] = any('peaks' in issue.lower() for issue in issues)
+        record['has_any_issue'] = len(issues) > 0
+        record['num_issues'] = len(issues)
+
+        # Add all statistics
+        record.update(stats_all[dataset_id])
+
+        records.append(record)
+
+    return pd.DataFrame(records)
+
+
+def plot_quality_stats_comparison(df, key_stats, figsize=(16, 12)):
+    """
+    Create comprehensive visualization comparing quality categories with statistics.
+    """
+    fig, axes = plt.subplots(4, 4, figsize=figsize)
+    fig.suptitle('Quality Categories vs Statistics Distribution', fontsize=16, fontweight='bold')
+    axes = axes.flatten()
+
+    for idx, stat in enumerate(key_stats[:16]):
+        ax = axes[idx]
+
+        # Create boxplot comparing datasets with/without issues
+        data_to_plot = [
+            df[df['has_any_issue'] == False][stat].dropna(),
+            df[df['has_any_issue'] == True][stat].dropna()
+        ]
+
+        bp = ax.boxplot(data_to_plot, labels=['No Issues', 'Has Issues'], patch_artist=True)
+        bp['boxes'][0].set_facecolor('#2ecc71')
+        bp['boxes'][1].set_facecolor('#e74c3c')
+
+        ax.set_ylabel(stat)
+        ax.set_title(f'{stat}')
+        ax.grid(True, alpha=0.3)
+
+        # Add p-value from t-test
+        if len(data_to_plot[0]) > 0 and len(data_to_plot[1]) > 0:
+            t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+            sig = '***' if p_val < 0.001 else '**' if p_val < 0.01 else '*' if p_val < 0.05 else 'ns'
+            ax.text(0.5, 0.95, f'p={p_val:.4f} {sig}',
+                    transform=ax.transAxes, ha='center', va='top', fontsize=8)
+
+    # Hide unused subplots
+    for idx in range(len(key_stats), len(axes)):
+        axes[idx].axis('off')
+
+    plt.tight_layout()
+    return fig, df
+
+
+def compute_correlation_matrix(quality_all, stats_all):
+    """
+    Compute correlation between quality flags and statistics.
+    """
+    df = prepare_quality_stats_dataframe(quality_all, stats_all)
+
+    # Get quality columns
+    quality_cols = ['has_low_signal_variability', 'has_no_turns',
+                    'has_peaks_issue', 'has_any_issue', 'num_issues']
+
+    # Get statistic columns
+    stat_cols = [col for col in df.columns if col not in
+                 ['dataset_id'] + quality_cols]
+
+    # Compute correlation matrix
+    corr_matrix = df[quality_cols + stat_cols].corr()
+
+    # Extract only quality vs stats correlations
+    quality_stats_corr = corr_matrix.loc[stat_cols, quality_cols]
+
+    return quality_stats_corr
+
+
+def plot_correlation_heatmap(quality_all, stats_all, figsize=(12, 10)):
+    """
+    Plot heatmap of correlations between quality categories and statistics.
+    """
+    corr_matrix = compute_correlation_matrix(quality_all, stats_all)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Create heatmap
+    sns.heatmap(corr_matrix, annot=True, fmt='.3f', cmap='RdBu_r', center=0,
+                vmin=-1, vmax=1, ax=ax, cbar_kws={'label': 'Correlation'})
+
+    ax.set_title('Correlation between Quality Categories and Statistics',
+                 fontsize=14, fontweight='bold', pad=20)
+    ax.set_xlabel('Quality Categories', fontsize=12)
+    ax.set_ylabel('Statistics', fontsize=12)
+
+    plt.tight_layout()
+    return fig, corr_matrix
+
+
+def statistical_comparison_by_issue(quality_all, stats_all):
+    """
+    Perform statistical tests comparing statistics between datasets with/without each issue type.
+    """
+    df = prepare_quality_stats_dataframe(quality_all, stats_all)
+
+    # Get statistic columns
+    stat_cols = [col for col in df.columns if col not in
+                 ['dataset_id', 'has_low_signal_variability', 'has_no_turns',
+                  'has_peaks_issue', 'has_any_issue', 'num_issues']]
+
+    # Issue types to test
+    issue_types = {
+        'Low Signal Variability': 'has_low_signal_variability',
+        'No Turns Found': 'has_no_turns',
+        'Peaks Issue': 'has_peaks_issue',
+        'Any Issue': 'has_any_issue'
+    }
+
+    results = []
+
+    for issue_name, issue_col in issue_types.items():
+        n_with_issue = df[issue_col].sum()
+        n_without_issue = (~df[issue_col]).sum()
+
+        if n_with_issue == 0 or n_without_issue == 0:
+            continue
+
+        for stat in stat_cols:
+            with_issue = df[df[issue_col] == True][stat].dropna()
+            without_issue = df[df[issue_col] == False][stat].dropna()
+
+            if len(with_issue) > 0 and len(without_issue) > 0:
+                # T-test
+                t_stat, p_val = scipy_stats.ttest_ind(with_issue, without_issue)
+
+                # Effect size (Cohen's d)
+                pooled_std = np.sqrt(((len(with_issue) - 1) * with_issue.std() ** 2 +
+                                      (len(without_issue) - 1) * without_issue.std() ** 2) /
+                                     (len(with_issue) + len(without_issue) - 2))
+                cohens_d = (with_issue.mean() - without_issue.mean()) / pooled_std if pooled_std > 0 else 0
+
+                results.append({
+                    'Issue Type': issue_name,
+                    'Statistic': stat,
+                    'Mean (With Issue)': with_issue.mean(),
+                    'Mean (Without Issue)': without_issue.mean(),
+                    'Difference': with_issue.mean() - without_issue.mean(),
+                    'p-value': p_val,
+                    'Cohen\'s d': cohens_d,
+                    'Significant': 'Yes' if p_val < 0.05 else 'No'
+                })
+
+    results_df = pd.DataFrame(results).sort_values('p-value')
+
+    return results_df
+
+
+def plot_specific_issue_comparison(quality_all, stats_all, issue_type='has_low_signal_variability',
+                                   top_n=8, figsize=(16, 10)):
+    """
+    Plot detailed comparison for a specific issue type.
+
+    Parameters:
+    -----------
+    issue_type : str
+        One of: 'has_low_signal_variability', 'has_no_turns', 'has_peaks_issue', 'has_any_issue'
+    """
+    df = prepare_quality_stats_dataframe(quality_all, stats_all)
+
+    stat_cols = [col for col in df.columns if col not in
+                 ['dataset_id', 'has_low_signal_variability', 'has_no_turns',
+                  'has_peaks_issue', 'has_any_issue', 'num_issues']]
+
+    # Calculate correlations for this issue type
+    correlations = []
+    for stat in stat_cols:
+        corr = df[[issue_type, stat]].corr().iloc[0, 1]
+        correlations.append((stat, abs(corr)))
+
+    # Select top N statistics by absolute correlation
+    top_stats = sorted(correlations, key=lambda x: x[1], reverse=True)[:top_n]
+    top_stat_names = [s[0] for s in top_stats]
+
+    # Create plots
+    n_cols = 3
+    n_rows = int(np.ceil(len(top_stat_names) / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    axes = axes.flatten() if n_rows > 1 else [axes] if n_cols == 1 else axes
+
+    issue_labels = {
+        'has_low_signal_variability': 'Low Signal Variability',
+        'has_no_turns': 'No Turns Found',
+        'has_peaks_issue': 'Peaks Issue',
+        'has_any_issue': 'Any Issue'
+    }
+
+    fig.suptitle(f'Top {top_n} Statistics Associated with: {issue_labels.get(issue_type, issue_type)}',
+                 fontsize=16, fontweight='bold')
+
+    for idx, stat in enumerate(top_stat_names):
+        ax = axes[idx]
+
+        data_to_plot = [
+            df[df[issue_type] == False][stat].dropna(),
+            df[df[issue_type] == True][stat].dropna()
+        ]
+
+        bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+        bp['boxes'][0].set_facecolor('#2ecc71')
+        bp['boxes'][1].set_facecolor('#e74c3c')
+
+        ax.set_ylabel(stat)
+        ax.set_xlabel(f'{issue_labels.get(issue_type, issue_type)}')
+        ax.set_title(f'{stat}')
+        ax.grid(True, alpha=0.3)
+
+        # Add statistics
+        if len(data_to_plot[0]) > 0 and len(data_to_plot[1]) > 0:
+            t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+            corr = df[[issue_type, stat]].corr().iloc[0, 1]
+            ax.text(0.5, 0.95, f'r={corr:.3f}, p={p_val:.4f}',
+                    transform=ax.transAxes, ha='center', va='top', fontsize=8,
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # Hide unused subplots
+    for idx in range(len(top_stat_names), len(axes)):
+        axes[idx].axis('off')
+
+    plt.tight_layout()
+    return fig
+
+def prepare_quality_error_dataframe1(quality_all, error_all):
+    """
+    Combine quality and error dictionaries into a single DataFrame.
+
+    Parameters:
+    -----------
+    quality_all : dict
+        Dictionary with dataset_id as keys and quality strings as values
+    error_all : dict
+        Dictionary with dataset_id as keys and error values (float) as values
+
+    Returns:
+    --------
+    pd.DataFrame with quality categories and errors
+    """
+    records = []
+
+    for dataset_id in quality_all.keys():
+        if dataset_id not in error_all:
+            continue
+
+        # Parse quality string
+        quality_str = quality_all[dataset_id]
+        issues = [issue.strip() for issue in quality_str.split('/')
+                  if issue.strip() and issue.strip() != 'okresults']
+
+        # Extract dataset source
+        source = dataset_id.split('_')[1] if '_' in dataset_id else 'unknown'
+
+        # Create record
+        record = {
+            'dataset_id': dataset_id,
+            'dataset_source': source,
+            'error': error_all[dataset_id],
+            'abs_error': abs(error_all[dataset_id])
+        }
+
+        # Add binary flags for each issue type
+        record['has_low_signal_variability'] = any('Low signal variability' in issue for issue in issues)
+        record['has_no_turns'] = any('No turns found' in issue for issue in issues)
+        record['has_peaks_issue'] = any('peaks' in issue.lower() for issue in issues)
+        record['has_any_issue'] = len(issues) > 0
+        record['num_issues'] = len(issues)
+        record['quality_string'] = quality_str
+
+        records.append(record)
+
+    return pd.DataFrame(records)
+
+
+def plot_error_by_quality(df, figsize=(16, 10)):
+    """
+    Create comprehensive visualization comparing quality categories with errors.
+    """
+
+    fig, axes = plt.subplots(2, 3, figsize=figsize)
+    fig.suptitle('Error Analysis by Quality Categories', fontsize=16, fontweight='bold')
+
+    # 1. Error distribution: with vs without issues
+    ax = axes[0, 0]
+    data_to_plot = [
+        df[df['has_any_issue'] == False]['abs_error'].dropna(),
+        df[df['has_any_issue'] == True]['abs_error'].dropna()
+    ]
+    bp = ax.boxplot(data_to_plot, labels=['No Issues', 'Has Issues'], patch_artist=True)
+    bp['boxes'][0].set_facecolor('#2ecc71')
+    bp['boxes'][1].set_facecolor('#e74c3c')
+    ax.set_ylabel('Absolute Error')
+    ax.set_title('Error by Overall Quality')
+    ax.grid(True, alpha=0.3)
+
+    if len(data_to_plot[0]) > 0 and len(data_to_plot[1]) > 0:
+        t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+        ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
+                ha='center', va='top', fontsize=9,
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # 2. Error by data source
+    ax = axes[0, 1]
+    sources = df['dataset_source'].unique()
+    data_by_source = [df[df['dataset_source'] == src]['abs_error'].dropna() for src in sources]
+    bp = ax.boxplot(data_by_source, labels=sources, patch_artist=True)
+    for patch in bp['boxes']:
+        patch.set_facecolor('#3498db')
+    ax.set_ylabel('Absolute Error')
+    ax.set_title('Error by Data Source')
+    ax.grid(True, alpha=0.3)
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+    # 3. Scatter: Number of issues vs Error
+    ax = axes[0, 2]
+    ax.scatter(df['num_issues'], df['abs_error'], alpha=0.6, s=50)
+    ax.set_xlabel('Number of Issues')
+    ax.set_ylabel('Absolute Error')
+    ax.set_title('Error vs Number of Issues')
+    ax.grid(True, alpha=0.3)
+
+    # Add correlation
+    if len(df) > 2:
+        corr = df[['num_issues', 'abs_error']].corr().iloc[0, 1]
+        ax.text(0.05, 0.95, f'r={corr:.3f}', transform=ax.transAxes,
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # 4. Error by specific issue: Low signal variability
+    ax = axes[1, 0]
+    if df['has_low_signal_variability'].sum() > 0:
+        data_to_plot = [
+            df[df['has_low_signal_variability'] == False]['abs_error'].dropna(),
+            df[df['has_low_signal_variability'] == True]['abs_error'].dropna()
+        ]
+        bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+        bp['boxes'][0].set_facecolor('#2ecc71')
+        bp['boxes'][1].set_facecolor('#e74c3c')
+        ax.set_ylabel('Absolute Error')
+        ax.set_title('Low Signal Variability')
+        ax.grid(True, alpha=0.3)
+
+        if len(data_to_plot[1]) > 0:
+            t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+            ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
+                    ha='center', va='top', fontsize=9,
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # 5. Error by specific issue: No turns
+    ax = axes[1, 1]
+    if df['has_no_turns'].sum() > 0:
+        data_to_plot = [
+            df[df['has_no_turns'] == False]['abs_error'].dropna(),
+            df[df['has_no_turns'] == True]['abs_error'].dropna()
+        ]
+        bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+        bp['boxes'][0].set_facecolor('#2ecc71')
+        bp['boxes'][1].set_facecolor('#e74c3c')
+        ax.set_ylabel('Absolute Error')
+        ax.set_title('No Turns Found')
+        ax.grid(True, alpha=0.3)
+
+        if len(data_to_plot[1]) > 0:
+            t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+            ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
+                    ha='center', va='top', fontsize=9,
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # 6. Error by specific issue: Peaks issue
+    ax = axes[1, 2]
+    if df['has_peaks_issue'].sum() > 0:
+        data_to_plot = [
+            df[df['has_peaks_issue'] == False]['abs_error'].dropna(),
+            df[df['has_peaks_issue'] == True]['abs_error'].dropna()
+        ]
+        bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+        bp['boxes'][0].set_facecolor('#2ecc71')
+        bp['boxes'][1].set_facecolor('#e74c3c')
+        ax.set_ylabel('Absolute Error')
+        ax.set_title('Peaks Issue')
+        ax.grid(True, alpha=0.3)
+
+        if len(data_to_plot[1]) > 0:
+            t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+            ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
+                    ha='center', va='top', fontsize=9,
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    plt.tight_layout()
+    return fig, df
+
+
+def error_summary_by_quality(df):
+    """
+    Generate summary statistics of errors grouped by quality categories.
+    """
+
+    print("=" * 80)
+    print("ERROR ANALYSIS BY QUALITY CATEGORIES")
+    print("=" * 80)
+
+    # Overall statistics
+    print("\n" + "-" * 80)
+    print("OVERALL ERROR STATISTICS")
+    print("-" * 80)
+    print(f"Total datasets: {len(df)}")
+    print(f"Mean error: {df['error'].mean():.4f}")
+    print(f"Mean absolute error: {df['abs_error'].mean():.4f}")
+    print(f"Std error: {df['error'].std():.4f}")
+    print(f"Median absolute error: {df['abs_error'].median():.4f}")
+
+    # By overall quality
+    print("\n" + "-" * 80)
+    print("ERROR BY OVERALL QUALITY STATUS")
+    print("-" * 80)
+    for has_issue in [False, True]:
+        subset = df[df['has_any_issue'] == has_issue]
+        label = "Has Issues" if has_issue else "No Issues"
+        print(f"\n{label}:")
+        print(f"  Count: {len(subset)}")
+        print(f"  Mean error: {subset['error'].mean():.4f}")
+        print(f"  Mean absolute error: {subset['abs_error'].mean():.4f}")
+        print(f"  Std error: {subset['error'].std():.4f}")
+        print(f"  Median absolute error: {subset['abs_error'].median():.4f}")
+
+    # Statistical test
+    if df['has_any_issue'].sum() > 0 and (~df['has_any_issue']).sum() > 0:
+        no_issues = df[df['has_any_issue'] == False]['abs_error']
+        has_issues = df[df['has_any_issue'] == True]['abs_error']
+        t_stat, p_val = scipy_stats.ttest_ind(no_issues, has_issues)
+        print(f"\n  T-test p-value: {p_val:.6f}")
+        print(f"  Significant difference: {'Yes' if p_val < 0.05 else 'No'}")
+
+    # By specific issues
+    print("\n" + "-" * 80)
+    print("ERROR BY SPECIFIC ISSUE TYPES")
+    print("-" * 80)
+
+    issue_types = [
+        ('Low Signal Variability', 'has_low_signal_variability'),
+        ('No Turns Found', 'has_no_turns'),
+        ('Peaks Issue', 'has_peaks_issue')
+    ]
+
+    for issue_name, issue_col in issue_types:
+        if df[issue_col].sum() > 0:
+            print(f"\n{issue_name}:")
+            subset = df[df[issue_col] == True]
+            print(f"  Count: {len(subset)}")
+            print(f"  Mean absolute error: {subset['abs_error'].mean():.4f}")
+            print(f"  Median absolute error: {subset['abs_error'].median():.4f}")
+
+            # T-test
+            without = df[df[issue_col] == False]['abs_error']
+            with_issue = df[df[issue_col] == True]['abs_error']
+            if len(without) > 0 and len(with_issue) > 0:
+                t_stat, p_val = scipy_stats.ttest_ind(without, with_issue)
+                print(f"  T-test p-value: {p_val:.6f}")
+
+    # By data source
+    print("\n" + "-" * 80)
+    print("ERROR BY DATA SOURCE")
+    print("-" * 80)
+    source_summary = df.groupby('dataset_source')['abs_error'].agg([
+        'count', 'mean', 'std', 'median', 'min', 'max'
+    ]).round(4)
+    print(source_summary)
+
+    return df
+
+
+def plot_error_distribution(df, figsize=(14, 6)):
+    """
+    Plot error distributions with quality overlay.
+    """
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    fig.suptitle('Error Distribution Analysis', fontsize=14, fontweight='bold')
+
+    # 1. Histogram with quality overlay
+    ax = axes[0]
+    no_issues = df[df['has_any_issue'] == False]['error']
+    has_issues = df[df['has_any_issue'] == True]['error']
+
+    ax.hist(no_issues, bins=20, alpha=0.6, label='No Issues', color='#2ecc71')
+    ax.hist(has_issues, bins=20, alpha=0.6, label='Has Issues', color='#e74c3c')
+    ax.set_xlabel('Error')
+    ax.set_ylabel('Frequency')
+    ax.set_title('Error Distribution by Quality')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.axvline(0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+
+    # 2. Violin plot by number of issues
+    ax = axes[1]
+    issue_counts = sorted(df['num_issues'].unique())
+    data_by_issues = [df[df['num_issues'] == n]['abs_error'].values for n in issue_counts]
+
+    parts = ax.violinplot(data_by_issues, positions=issue_counts, widths=0.7,
+                          showmeans=True, showmedians=True)
+    ax.set_xlabel('Number of Issues')
+    ax.set_ylabel('Absolute Error')
+    ax.set_title('Error Distribution by Issue Count')
+    ax.grid(True, alpha=0.3)
+    ax.set_xticks(issue_counts)
+
+    plt.tight_layout()
+    return fig
+
+
+def correlation_analysis(df):
+    """
+    Compute correlations between quality flags and errors.
+    """
+    quality_cols = ['has_low_signal_variability', 'has_no_turns',
+                    'has_peaks_issue', 'has_any_issue', 'num_issues']
+
+    correlations = []
+    for col in quality_cols:
+        # Point-biserial correlation for binary variables
+        if df[col].dtype == bool:
+            corr, p_val = scipy_stats.pointbiserialr(df[col], df['abs_error'])
+        else:
+            corr, p_val = scipy_stats.pearsonr(df[col], df['abs_error'])
+
+        correlations.append({
+            'Quality Category': col.replace('has_', '').replace('_', ' ').title(),
+            'Correlation with Abs Error': corr,
+            'P-value': p_val,
+            'Significant': 'Yes' if p_val < 0.05 else 'No'
+        })
+
+    corr_df = pd.DataFrame(correlations).sort_values('Correlation with Abs Error',
+                                                     key=abs, ascending=False)
+
+    print("\n" + "=" * 80)
+    print("CORRELATION BETWEEN QUALITY CATEGORIES AND ERROR")
+    print("=" * 80)
+    print(corr_df.to_string(index=False))
+
+    return corr_df
+
+
+def identify_problematic_datasets(df, error_threshold=1.5):
+    """
+    Identify datasets with high errors and their quality issues.
+    """
+
+    high_error = df[df['abs_error'] > error_threshold].sort_values('abs_error', ascending=False)
+
+    print("\n" + "=" * 80)
+    print(f"DATASETS WITH ABSOLUTE ERROR > {error_threshold}")
+    print("=" * 80)
+    print(f"Found {len(high_error)} datasets\n")
+
+    for _, row in high_error.iterrows():
+        print(f"Dataset: {row['dataset_id']}")
+        print(f"  Error: {row['error']:.4f} (abs: {row['abs_error']:.4f})")
+        print(f"  Source: {row['dataset_source']}")
+        print(f"  Quality issues: {row['quality_string']}")
+        print()
+
+    return high_error

@@ -116,7 +116,7 @@ class TUGTest:
             session_id: int,
             gt_total_gwalk: Optional[float] = None,
             gt_total_manual: Optional[float] = None,
-            gt_phases: Optional[TUGPhases] = None
+            gt_phases: Optional[TUGPhases] = None,
     ):
         # Identifiers
         self.test_id = test_id
@@ -136,7 +136,6 @@ class TUGTest:
         self.context: Optional[str] = None
 
         # Sensor data
-
         self.raw_data: Optional[pd.DataFrame] = None
         self.processed_data: Optional[pd.DataFrame] = None
 
@@ -146,6 +145,7 @@ class TUGTest:
 
         ## Results
         self.results: Optional[Dict] = {}
+        self.quality: Optional[Dict] = {}
 
     def plot_raw_data(self):
         """
@@ -199,8 +199,11 @@ class TUGTest:
             gtm=0
 
         gtg = self.gt_total_gwalk
-        if gtg>5000:
-            gtg=gtg/1000
+        if gtg is not None:
+            if gtg>5000:
+                gtg=gtg/1000
+        else:
+            gtg = 0
 
         plt.title(f"TUG raw data, "
                   f"{self.user_id}_{self.session_id}, "

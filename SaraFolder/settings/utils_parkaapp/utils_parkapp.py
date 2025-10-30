@@ -11,7 +11,7 @@ import pickle
 
 from matplotlib import pyplot as plt
 plt.ion()
-from SaraFolder.settings import running_settings, classes, utils_plots
+from SaraFolder.settings import running_settings, classes, utils_plots, utils_labelling, utils_dataquality
 from SaraFolder.settings.utils_pisa import utils_pisatugloaders
 from SaraFolder.settings.utils_synergy import utils_synloaders
 
@@ -229,7 +229,7 @@ def load_fusiondf(motion_files, orientation_files):
     df_fusion = {}
     for key in list(motion_files.keys()):
         if key[:-2] in skipped:
-            if True:
+            if False:
                 investigate_skipped_files(orientation_files[key], motion_files[key])
             del orientation_files[key]
             del motion_files[key]
@@ -392,27 +392,36 @@ def tugt_icc(all_tests):
     return icc_s
 
 
-def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp'):
-    all_tests = []
+def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp', skipped=None):
+    all_tests_valid = []
+    skipped_tests = {}
     for i, (k, t) in enumerate(df_fusion.items()):
-        gt_dict = df_gt_dict[k[:-2]]
-        gt_phases = classes.TUGPhases(
-            t_start = gt_dict['t_start'],
-            t_end_stand = gt_dict['t_end_stand'],
-            t_start_turn = gt_dict['t_start_turn'],
-            t_end_turn = gt_dict['t_end_turn'],
-            t_start_turn2 = gt_dict['t_start_turn2'],
-            t_start_sit = gt_dict['t_start_sit'],
-            t_end = gt_dict['t_end']
-        )
+        if k[:-2] in df_gt_dict.keys():
+            gt_dict = df_gt_dict[k[:-2]]
+            gt_phases = classes.TUGPhases(
+                t_start = gt_dict['t_start'],
+                t_end_stand = gt_dict['t_end_stand'],
+                t_start_turn = gt_dict['t_start_turn'],
+                t_end_turn = gt_dict['t_end_turn'],
+                t_start_turn2 = gt_dict['t_start_turn2'],
+                t_start_sit = gt_dict['t_start_sit'],
+                t_end = gt_dict['t_end']
+            )
 
-        test = classes.TUGTest(test_id=i,
-                               user_id=k.split('_')[0] + '_' + dataset_id,
-                               session_id=k.split('_')[1],
-                               dataset_id=dataset_id,
-                               gt_total_manual = gt_dict['t_end'] - gt_dict['t_start'],
-                               gt_phases=gt_phases
-                               )
+            test = classes.TUGTest(test_id=i,
+                                   user_id=k.split('_')[0] + '_' + dataset_id,
+                                   session_id=k.split('_')[1],
+                                   dataset_id=dataset_id,
+                                   gt_total_manual = gt_dict['t_end'] - gt_dict['t_start'],
+                                   gt_phases=gt_phases
+                                   )
+        else:
+            test = classes.TUGTest(test_id=i,
+                                   user_id=k.split('_')[0] + '_' + dataset_id,
+                                   session_id=k.split('_')[1],
+                                   dataset_id=dataset_id
+                                   )
+
         test.created_on = None
         test.wearing_position = 'waist-pouch'
         test.smartphone_info = None
@@ -428,9 +437,16 @@ def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp'):
         test.processed_data = t
         test.processed_data = test.processed_data.dropna().reset_index(drop=True)
 
-        all_tests.append(test)
+        if k[:-2] not in df_gt_dict.keys() and test.context == 'unsupervised':
+            print("Skipped tests")
+            skipped_tests[k] = test
+            # utils_labelling.plot_faulty_signal(t, 'skippedtest: '+k)
+        else:
+            all_tests_valid.append(test)
 
-    return all_tests
+
+
+    return all_tests_valid, skipped_tests
 
 def return_context_tests(tests, context):
     if context == 'supervised':
@@ -445,7 +461,7 @@ def load_all_tests(dataset_id, context='supervised'):
     if dataset_id == 'parkapp':
         df_fusion = ready_df()
         df_gt_dict, times_gwalk = load_groundtruth_dict()
-        tests = set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id=dataset_id)
+        tests, _ = set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id=dataset_id)
         all_tests = return_context_tests(tests, context)
 
     elif dataset_id == 'synergy' or dataset_id == 'pisa':
@@ -473,5 +489,53 @@ def load_all_tests(dataset_id, context='supervised'):
                     all_tests = return_context_tests(tests, context)
                     with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'wb') as handle:
                         pickle.dump(all_tests, handle)
+
+    return all_tests
+
+
+def load_fusiondf_skipped(motion_files, orientation_files):
+    skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
+    skipped_keys = []
+    df_fusion = {}
+    for key in list(motion_files.keys()):
+        if key[:-2] in skipped:
+            skipped_keys.append(key)
+            # if True:
+            #     investigate_skipped_files(orientation_files[key], motion_files[key])
+            # del orientation_files[key]
+            # del motion_files[key]
+
+        df_motion = motion_files[key]
+        df_orientation = orientation_files[key]
+        try:
+            df_final = setup_df(df_motion, df_orientation)
+            df_fusion[key] = df_final
+        except:
+            print(f"Error on the setup for {key}")
+    return df_fusion, skipped_keys
+
+
+def ready_df_skipped():
+    motion_files, orientation_files = loader()
+    return load_fusiondf_skipped(motion_files, orientation_files)
+
+
+def load_groundtruth_dict_skipped():
+    times = pd.read_csv(base_path + os.sep + "manual_times.csv", index_col=0)
+    dict_times = times.transpose().to_dict()
+    times_gwalk = pd.read_excel(base_path + os.sep + "gwalk_times.xlsx", index_col=0)
+    times_gwalk = times_gwalk.transpose().to_dict()
+    return dict_times, times_gwalk
+
+
+def load_all_tests_skipped(dataset_id, context='supervised'):
+
+    if dataset_id == 'parkapp':
+        df_fusion, skipped_list = ready_df_skipped()
+        df_gt_dict, times_gwalk = load_groundtruth_dict_skipped()
+        tests, skipped_tests = set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id=dataset_id, skipped=skipped_list)
+        all_tests = return_context_tests(tests, context)
+
+        utils_dataquality.observesingletests_skipped(skipped_tests, method=None, title='skippedtests_motivation.csv')
 
     return all_tests

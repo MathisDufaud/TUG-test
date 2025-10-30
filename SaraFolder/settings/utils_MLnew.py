@@ -654,17 +654,18 @@ def evaluate_duration_tests(holdout_tests_original, method):
 
 def observe_performance_per_test(original_tests_fold, holdout_tests_original, method, modelname):
     # Observe performances across tests
-    holdout_tests_original = evaluate_duration_tests(holdout_tests_original, method)
+    if len(holdout_tests_original)>0:
+        holdout_tests_original = evaluate_duration_tests(holdout_tests_original, method)
+
+        utils_evaluation.evaluate_results(list(holdout_tests_original.values()), eval_type='duration',
+                                          method=method, gttype='gwalk',
+                                          dataset='holdout', title=modelname + '_' + method, logging=True)
 
     all_folds_tests = []
     for f in original_tests_fold.keys():
         val_tests_original = original_tests_fold[f]
         val_tests_original = evaluate_duration_tests(val_tests_original, method)
         all_folds_tests.extend(list(val_tests_original.values()))
-
-    utils_evaluation.evaluate_results(list(holdout_tests_original.values()), eval_type='duration',
-                                      method=method, gttype='gwalk',
-                                      dataset='holdout', title=modelname + '_' + method, logging=True)
 
     utils_evaluation.evaluate_results(all_folds_tests, eval_type='duration',
                                       method=method, gttype='gwalk',
@@ -742,12 +743,16 @@ def kfold_validation(all_tests, n_splits):
 
     unique_tests = np.unique(test_indices)
 
-    train_val_tests, holdout_tests = train_test_split(
-        unique_tests,
-        test_size=0.15,
-        random_state=42,
-        shuffle=True
-    )
+    if False:
+        train_val_tests, holdout_tests = train_test_split(
+            unique_tests,
+            test_size=0, #0.15
+            random_state=42,
+            shuffle=True
+        )
+    else:
+        holdout_tests = []
+        train_val_tests = unique_tests
     holdout_tests_original = {i: test for i, test in enumerate(all_tests) if i in holdout_tests}
 
     print(f"Train+Val tests: {len(train_val_tests)}, Holdout tests: {len(holdout_tests)}")
@@ -887,16 +892,18 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
         best_scaler = scalers[best_fold_idx]
 
         test_indeces = np.arange(len(all_tests))
-        # Evaluate on holdout set
-        fold_models, holdout_results = evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indeces,
-                                                        test_index, holdout_tests, save=False)
-        # modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
-        holdout_results_df, holdout_level_metrics, holdout_tests_original = evaluate_holdout_per_test(best_model,
-                                                                                                      best_scaler, X, y,
-                                                                                                      test_index,
-                                                                                                      holdout_tests,
-                                                                                                      best_fold_idx,
-                                                                                                      holdout_tests_original)
+
+        if len(holdout_tests)>0:
+            # Evaluate on holdout set
+            fold_models, holdout_results = evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indeces,
+                                                            test_index, holdout_tests, save=False)
+            # modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
+            holdout_results_df, holdout_level_metrics, holdout_tests_original = evaluate_holdout_per_test(best_model,
+                                                                                                          best_scaler, X, y,
+                                                                                                          test_index,
+                                                                                                          holdout_tests,
+                                                                                                          best_fold_idx,
+                                                                                                          holdout_tests_original)
 
         observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method.strip('.h5'), modelname=model_name.strip('.h5'))
 

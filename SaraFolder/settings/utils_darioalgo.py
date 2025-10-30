@@ -257,6 +257,7 @@ def add_tug_features(df, window_size_1s=60, window_size_half_s=30):
 # df_processed = add_tug_features(df_start)
 # result = get_TUG_duration_4(df_processed)
 def find_peaks_algo(df):
+    quality = ''
     # Convert dataframe to list of dicts for easier iteration
     tug_data = df.to_dict('records')
 
@@ -323,6 +324,7 @@ def find_peaks_algo(df):
     if len(peaks) < 2:
         print(f"Warning: Not enough orientation derivative peaks found: {len(peaks)}")
         peak1, peak2 = None, None
+        quality = 'No turns found with darioalgo approach/'
     else:
         good_quality = True
 
@@ -353,8 +355,15 @@ def find_peaks_algo(df):
             peak1_ratio = peak1['value'] / mean_orientation_derivative
             peak2_ratio = peak2['value'] / mean_orientation_derivative
 
-            if peaks_above_mean_percentage > 50 or peak1_ratio < 2 or peak2_ratio < 2:
+            if peaks_above_mean_percentage > 50:
                 good_quality = False
+                quality = 'peaks too high compared to mean %/'
+            if peak1_ratio < 2 or peak2_ratio < 2:
+                good_quality = False
+                quality = 'peaks ratio below two/'
+            if peaks_above_mean_percentage > 50 and peak1_ratio < 2 or peak2_ratio < 2:
+                good_quality = False
+                quality = 'both peaks to high to mean % and peaks ratio below two/'
 
             backward_gait_duration = peak2['ms'] - peak1['ms']
             standing_sitting_time = 2000
@@ -373,7 +382,7 @@ def find_peaks_algo(df):
                 print(f"->Good quality measurement, searching between {search_start_ms} and {search_end_ms}, "
                       f"backward gait duration: {backward_gait_duration} ms")
 
-    return search_start_ms, search_end_ms, peak1, peak2, tug_data
+    return search_start_ms, search_end_ms, peak1, peak2, tug_data, quality
 
 
 def get_TUG_duration_4(df):
@@ -393,7 +402,7 @@ def get_TUG_duration_4(df):
         """
         df = add_tug_features(df)
 
-        search_start_ms, search_end_ms, peak1, peak2, tug_data = find_peaks_algo(df)
+        search_start_ms, search_end_ms, peak1, peak2, tug_data, quality = find_peaks_algo(df)
 
         # Detect activity start and end
         activity_threshold = 0.5
@@ -404,15 +413,13 @@ def get_TUG_duration_4(df):
         for line in tug_data:
             if search_start_ms <= line['msFromStart'] <= search_end_ms:
                 # Detect start of activity
-                if (line['accGMagnitudeVar'] > activity_threshold and
-                        past_val < activity_threshold and
+                if (line['accGMagnitudeVar'] > activity_threshold > past_val and
                         start_ms == 0):
                     start_ms = line['msFromStart']
 
                 # Detect end of activity
                 if (line['msFromStart'] > 3000 and
-                        line['accGMagnitudeVar'] < activity_threshold and
-                        past_val > activity_threshold and
+                        line['accGMagnitudeVar'] < activity_threshold < past_val and
                         start_ms != 0):
                     end_ms = line['msFromStart']
 
@@ -427,6 +434,6 @@ def get_TUG_duration_4(df):
             'startMs': start_ms,
             'endMs': end_ms,
             'duration': end_ms - start_ms
-        }
+        }, quality
     except:
         print("bug")
