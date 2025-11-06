@@ -13,18 +13,21 @@ if __name__ == "__main__":
     all_tests_synergy = utils_parkapp.load_all_tests(dataset_id = 'synergy', context='supervised')
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp]))
 
+
+
     # Set up csv with new manual start and end times
     if True:
-        utils_MLnew.setup_manual_labelling_csv(all_tests, filename='testssupervised_manualmsstartend.csv')
+        utils_MLnew.setup_manual_labelling_csv(all_tests, filename='testssupervised_manualmsstartend_new.csv')
 
-    model = utils_MLnew.ML_pipeline(all_tests,
-                                    model_name="mdl_15str3_strongbs.h5",
-                                    architecture='strongbs', # strongbs, '',
+    model = utils_MLnew.ML_pipeline(all_tests_parkapp,
+                                    model_name="mdl_strongbsparkapp.h5",
+                                    architecture='strongbs', # strongbs, '', # strongbs # bs_predictbatch
                                     use_cv=True,
-                                    n_splits=5,  # lopo
-                                    training_epochs=30,
+                                    n_splits=5,  # lopo # equalcvsplit # int number
+                                    training_epochs=5,
                                     save_model=False,
-                                    input_type='triaxial')  # or 'magnitude_acc' # triaxial
+                                    input_type='triaxial',
+                                    output_steps=0)  # or 'magnitude_acc' # triaxial
     if True:
         pass
 

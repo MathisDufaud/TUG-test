@@ -3,6 +3,7 @@ import time
 
 import matplotlib
 import numpy as np
+from scipy.signal import find_peaks
 
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -18,11 +19,14 @@ def loading_previous_comments(title, type):
     if title in os.listdir(running_settings.results_all):
         df_tests = pd.read_csv(running_settings.results_all + os.sep + title, index_col=0)
         print(f"Loaded existing comments from {running_settings.results_all + os.sep + title}")
+        if 'gtManualS' in df_tests.columns:
+            # Drop column
+            df_tests.drop('gtManualS', axis=1, inplace=True)
+
     else:
-        if type == 'alltests':
-            df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual', 'gt gwalk', 'gt manual', 'secStart', 'secEnd'])
-        elif type == 'skipped':
-            df_tests = pd.DataFrame(columns=['comment', 'context', 'secStart', 'secEnd'])
+        df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual',
+                                         'gt gwalk', 'gt manual', 'secStart', 'secEnd'])
+
     return df_tests
 
 def observesingletests(all_tests, method, title):
@@ -45,9 +49,7 @@ def observesingletests(all_tests, method, title):
             print(f"Skipping {indexid}, already in dataframe.")
             continue
 
-        # Plot data
-        test.plot_raw_data()
-        test.plot_labelling(method=method, plot=False)
+        test.data_quality_investigation(plot=True)
 
         plt.draw()
         plt.pause(0.5)  # Pause for 0.5 seconds
@@ -56,8 +58,11 @@ def observesingletests(all_tests, method, title):
         if gtg > 5000:
             gtg = gtg / 1000
         gtm = test.gt_total_manual
-        if gtm > 5000:
-            gtm = gtm / 1000
+        if gtm is not None:
+            if gtm > 5000:
+                gtm = gtm / 1000
+        else:
+            gtm = 0
 
         if not isinstance(test.results[method], str):
             error_tot_duration_gwalk = (test.results[method]['t_end'] - test.results[method]['t_start']) - gtg
@@ -75,7 +80,6 @@ def observesingletests(all_tests, method, title):
         comment = input(f"Enter comment for test {indexid}: ")
         which_strange = input(f"Which strange signal for test {indexid}: ")
 
-        # Select with cursor the start and end of the TUG test (x axis of the figure)
         # Select with cursor the start and end of the TUG test (x axis of the figure)
         print("Click on the plot to select START point (x-axis)...")
         plt.draw()
@@ -310,10 +314,12 @@ def dict_to_plot_stats(all_tests, stats_of_interest):
     return df_plot
 
 
-def compute_stats_tests(all_tests):
+def compute_stats_tests(all_tests, plot=False):
     for test in all_tests:
-        test.plot_labelling(method='labelling', plot=False)
-        test.data_quality_investigation(plot=False)
+        test.data_quality_investigation(plot=plot)
+        if plot:
+            # Add a break/pause in the code that I can unblock only by clicking 'Enter' in my keyboard
+            input("Press Enter to continue to next plot...")
     pass
 
 def compute_error_tests(all_tests, method):
@@ -375,6 +381,28 @@ def compute_tests_stats(all_tests, stats_of_interest):
     return all_tests
 
 
+def calc_qualityscore(dict_stats, df):
+    # 8. COMPOSITE QUALITY SCORE
+    # Lower score = worse quality
+    quality_score = 0
+
+    # Penalize flat signals (low CV)
+    if dict_stats['cv_acc'] < 0.01:
+        quality_score -= 5
+
+    # Penalize noisy signals (low SNR, high zero-crossing rate)
+    if dict_stats['snr_acc'] < 10:
+        quality_score -= 3
+    if dict_stats['zcr_acc'] > 0.5:
+        quality_score -= 3
+
+    # Reward good signals
+    if dict_stats['entropy_acc'] > 2.0 and dict_stats['std_acc'] > 0.1:
+        quality_score += 5
+
+    return float(quality_score)
+
+
 def compute_test_stats(df):
     dict_stats = {}
 
@@ -405,6 +433,120 @@ def compute_test_stats(df):
     dict_stats['entropy_alpha'] = float(calculate_entropy(df['alpha']))
     dict_stats['entropy_beta'] = float(calculate_entropy(df['beta']))
 
+    # 2. FLATNESS INDICATORS (detect flat/constant signals)
+    # Coefficient of variation (CV = std/mean) - low CV indicates flat signal
+    dict_stats['cv_acc'] = float(df['sqrt(X²+Y²+Z²)'].std() / df['sqrt(X²+Y²+Z²)'].mean()) if df[
+                                                                                                  'sqrt(X²+Y²+Z²)'].mean() != 0 else 0
+    dict_stats['cv_rotrate'] = float(df['rotRate_beta_gamma'].std() / abs(df['rotRate_beta_gamma'].mean())) if df[
+                                                                                                                   'rotRate_beta_gamma'].mean() != 0 else 0
+    dict_stats['cv_alpha'] = float(df['alpha'].std() / abs(df['alpha'].mean())) if df['alpha'].mean() != 0 else 0
+    dict_stats['cv_beta'] = float(df['beta'].std() / abs(df['beta'].mean())) if df['beta'].mean() != 0 else 0
+
+    # Range as percentage of mean (normalized range)
+    dict_stats['range_norm_acc'] = float(
+        (df['sqrt(X²+Y²+Z²)'].max() - df['sqrt(X²+Y²+Z²)'].min()) / df['sqrt(X²+Y²+Z²)'].mean()) if df[
+                                                                                                        'sqrt(X²+Y²+Z²)'].mean() != 0 else 0
+    dict_stats['range_norm_rotrate'] = float(
+        (df['rotRate_beta_gamma'].max() - df['rotRate_beta_gamma'].min()) / abs(df['rotRate_beta_gamma'].mean())) if df['rotRate_beta_gamma'].mean() != 0 else 0
+
+    # 3. NOISE INDICATORS
+    # Signal-to-Noise Ratio (SNR) approximation using signal power vs high-freq noise
+    def estimate_snr(signal):
+        """Estimate SNR by comparing signal variance to derivative variance."""
+        signal_clean = signal.dropna()
+        if len(signal_clean) < 2:
+            return 0
+        signal_power = signal_clean.var()
+        noise_power = np.diff(signal_clean).var()  # High-frequency changes
+        if noise_power == 0:
+            return float('inf') if signal_power > 0 else 0
+        return float(signal_power / noise_power)
+
+    dict_stats['snr_acc'] = float(estimate_snr(df['sqrt(X²+Y²+Z²)']))
+    dict_stats['snr_rotrate'] = float(estimate_snr(df['rotRate_beta_gamma']))
+    dict_stats['snr_alpha'] = float(estimate_snr(df['alpha']))
+    dict_stats['snr_beta'] = float(estimate_snr(df['beta']))
+
+    # Zero-crossing rate (normalized) - high rate can indicate noise
+    def zero_crossing_rate(signal):
+        """Calculate zero-crossing rate."""
+        signal_clean = signal.dropna()
+        if len(signal_clean) < 2:
+            return 0
+        signal_centered = signal_clean - signal_clean.mean()
+        crossings = np.sum(np.diff(np.sign(signal_centered)) != 0)
+        return float(crossings / len(signal_clean))
+
+    dict_stats['zcr_acc'] = zero_crossing_rate(df['sqrt(X²+Y²+Z²)'])
+    dict_stats['zcr_rotrate'] = zero_crossing_rate(df['rotRate_beta_gamma'])
+    dict_stats['zcr_alpha'] = zero_crossing_rate(df['alpha'])
+    dict_stats['zcr_beta'] = zero_crossing_rate(df['beta'])
+
+    # 4. SIGNAL COMPLEXITY
+    # Interquartile range (IQR) - measure of spread
+    dict_stats['iqr_acc'] = float(df['sqrt(X²+Y²+Z²)'].quantile(0.75) - df['sqrt(X²+Y²+Z²)'].quantile(0.25))
+    dict_stats['iqr_rotrate'] = float(df['rotRate_beta_gamma'].quantile(0.75) - df['rotRate_beta_gamma'].quantile(0.25))
+    dict_stats['iqr_alpha'] = float(df['alpha'].quantile(0.75) - df['alpha'].quantile(0.25))
+    dict_stats['iqr_beta'] = float(df['beta'].quantile(0.75) - df['beta'].quantile(0.25))
+
+    # 7. PEAK STATISTICS (can help identify structured vs noisy signals)
+    def peak_statistics(signal):
+        """Calculate number and properties of peaks."""
+        signal_clean = signal.dropna().values
+        if len(signal_clean) < 3:
+            return 0, 0
+        peaks, properties = find_peaks(signal_clean, prominence=signal_clean.std() * 0.5)
+        num_peaks = len(peaks)
+        peak_density = num_peaks / len(signal_clean)  # Peaks per sample
+        return float(num_peaks), float(peak_density)
+
+    dict_stats['num_peaks_acc'], dict_stats['peak_density_acc'] = peak_statistics(df['sqrt(X²+Y²+Z²)'])
+    dict_stats['num_peaks_rotrate'], dict_stats['peak_density_rotrate'] = peak_statistics(df['rotRate_beta_gamma'])
+
+    dict_stats['quality_score'] = calc_qualityscore(dict_stats, df)
+
+    # Sample entropy
+    def sample_entropy(signal, m=2, r=None):
+        """Calculate sample entropy of a time series."""
+        signal = np.array(signal.dropna())
+        if len(signal) < m + 1:
+            return np.nan
+        if r is None:
+            r = 0.2 * np.std(signal)
+        N = len(signal)
+
+        def _phi(m):
+            x = np.array([signal[i:i + m] for i in range(N - m + 1)])
+            C = np.sum([np.sum(np.max(np.abs(x - xi), axis=1) <= r) - 1 for xi in x])
+            return C / ((N - m + 1) * (N - m))
+
+        return -np.log(_phi(m + 1) / _phi(m)) if _phi(m) != 0 else np.nan
+
+    dict_stats['sampen_acc'] = sample_entropy(df['sqrt(X²+Y²+Z²)'])
+    dict_stats['sampen_alpha'] = sample_entropy(df['alpha'])
+    dict_stats['sampen_alpha'] = sample_entropy(df['beta'])
+
+    # 3. Lempel–Ziv Complexity (LZC)
+    # LZC quantifies the diversity of patterns in a sequence — higher values mean a more complex and less repetitive signal.
+    def lempel_ziv_complexity(signal):
+        """Compute Lempel–Ziv complexity for a 1D signal."""
+        signal = signal.dropna()
+        if len(signal) < 10:
+            return np.nan
+        # Binarize around median
+        median_val = np.median(signal)
+        binary_seq = ''.join(['1' if x > median_val else '0' for x in signal])
+        i, c, s = 0, 1, binary_seq[0]
+        for j in range(1, len(binary_seq)):
+            if binary_seq[j] not in s:
+                c += 1
+                s = binary_seq[:j + 1]
+            i += 1
+        return float(c / len(binary_seq))
+
+    dict_stats['lzc_acc'] = lempel_ziv_complexity(df['sqrt(X²+Y²+Z²)'])
+    dict_stats['lzc_beta'] = lempel_ziv_complexity(df['beta'])
+    dict_stats['lzc_alpha'] = lempel_ziv_complexity(df['alpha'])
 
     return dict_stats
 
@@ -475,9 +617,9 @@ def quality_assessment(df, dataset_id):
     quality += check_signalvariability(df, cols=['alpha', 'beta', 'gamma'], threshold=0.5)
     quality += check_signalvariability(df, cols=['rotRate.alpha', 'rotRate.beta', 'rotRate.gamma'], threshold=0.5)
 
-    if 'Low signal variability' in quality:
+    # if 'Low signal variability' in quality:
+    if False:
         utils_labelling.plot_faulty_signal(df, 'quality check')
-
 
     # Sampling frequency - not less than 30 samples/second
     # Calculate time span in seconds
@@ -715,26 +857,18 @@ def get_stats_all(all_tests, method):
     return quality_all
 
 
-def quality_stats(all_tests):
-    method = 'labelling'  # darioalgo or labelling
-    utils_labelling.labelling_acrossall(all_tests, method=method)
-    compute_stats_tests(all_tests)
+def quality_stats(all_tests, method='labelling'):
 
     quality_all = get_quality_all(all_tests, method)
     stats_all = get_stats_all(all_tests, method)
 
     df = prepare_quality_stats_dataframe(quality_all, stats_all)
 
-    # Select key statistics for visualization
-    key_stats = ['entropy_acc',  'entropy_rotrate',
-                 'autocorr2sec_acc', 'autocorr2sec_alpha',
-                 'autocorr2sec_beta', 'entropy_alpha', 'entropy_beta',
-                 'autocorr5sec_alpha', 'autocorr5sec_beta','autocorr5sec_acc','autocorr1sec_acc', 'autocorr1sec_alpha', 'autocorr1sec_beta']
 
-    key_stats = [s for s in key_stats if s in df.columns]
+    key_stats = [s for s in df.columns if 'has' not in s and 'dataset' not in s and 'issue' not in s]
 
     fig1, df = plot_quality_stats_comparison(df, key_stats=key_stats)
-    fig2, corr = plot_correlation_heatmap(quality_all, stats_all)
+    fig2, corr = plot_correlation_heatmap(df)
     results = statistical_comparison_by_issue(quality_all, stats_all)
     fig3 = plot_specific_issue_comparison(quality_all, stats_all, 'has_low_signal_variability')
 
@@ -815,11 +949,30 @@ def plot_quality_stats_comparison(df, key_stats, figsize=(16, 12)):
     Create comprehensive visualization comparing quality categories with statistics.
     """
     fig, axes = plt.subplots(4, 4, figsize=figsize)
-    fig.suptitle('Quality Categories vs Statistics Distribution', fontsize=16, fontweight='bold')
+    fig.suptitle('Quality Categories vs Statistics Distribution #1', fontsize=16, fontweight='bold')
     axes = axes.flatten()
+    c=1
+    idx_real = 0
+    for idx, stat in enumerate(key_stats):
+        print(f"Stat: {stat}, idx:{idx}, idx real {idx_real}")
 
-    for idx, stat in enumerate(key_stats[:16]):
-        ax = axes[idx]
+        if idx >= 16*c:
+            # Hide unused subplots
+            for idx in range(len(key_stats), len(axes)):
+                axes[idx].axis('off')
+
+            plt.tight_layout()
+            plt.show()
+            fig, axes = plt.subplots(4, 4, figsize=figsize)
+            axes = axes.flatten()
+            fig.suptitle(f'Quality Categories vs Statistics Distribution #{c}', fontsize=16, fontweight='bold')
+            c+=1
+            idx_real=0
+            print(f"RESETTING Stat: {stat}, idx:{idx}, idx real {idx_real}")
+
+
+        ax = axes[idx_real]
+        idx_real+=1
 
         # Create boxplot comparing datasets with/without issues
         data_to_plot = [
@@ -840,7 +993,8 @@ def plot_quality_stats_comparison(df, key_stats, figsize=(16, 12)):
             t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
             sig = '***' if p_val < 0.001 else '**' if p_val < 0.01 else '*' if p_val < 0.05 else 'ns'
             ax.text(0.5, 0.95, f'p={p_val:.4f} {sig}',
-                    transform=ax.transAxes, ha='center', va='top', fontsize=8)
+                    transform=ax.transAxes, ha='center', va='top', fontsize=8, fontweight='bold')
+
 
     # Hide unused subplots
     for idx in range(len(key_stats), len(axes)):
@@ -850,11 +1004,10 @@ def plot_quality_stats_comparison(df, key_stats, figsize=(16, 12)):
     return fig, df
 
 
-def compute_correlation_matrix(quality_all, stats_all):
+def compute_correlation_matrix(df):
     """
     Compute correlation between quality flags and statistics.
     """
-    df = prepare_quality_stats_dataframe(quality_all, stats_all)
 
     # Get quality columns
     quality_cols = ['has_low_signal_variability', 'has_no_turns',
@@ -873,11 +1026,11 @@ def compute_correlation_matrix(quality_all, stats_all):
     return quality_stats_corr
 
 
-def plot_correlation_heatmap(quality_all, stats_all, figsize=(12, 10)):
+def plot_correlation_heatmap(df, figsize=(12, 10)):
     """
     Plot heatmap of correlations between quality categories and statistics.
     """
-    corr_matrix = compute_correlation_matrix(quality_all, stats_all)
+    corr_matrix = compute_correlation_matrix(df)
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -1364,3 +1517,104 @@ def identify_problematic_datasets(df, error_threshold=1.5):
         print()
 
     return high_error
+
+def pass_filter(data, cutoff, fs, order=4, btype='low'):
+    from scipy import signal
+
+    nyquist = fs / 2
+    normal_cutoff = cutoff / nyquist
+    b, a = signal.butter(order, normal_cutoff, btype=btype, analog=False)
+    filtered_data = signal.filtfilt(b, a, data)
+
+    return filtered_data
+
+def apply_filter(alpha, time, cutoff, order, btype):
+    # Calculate sampling frequency
+    dt = np.mean(np.diff(time))
+    fs = 1 / dt  # Sampling frequency in Hz
+    return pass_filter(alpha, cutoff=cutoff, fs=fs, order=order, btype=btype), fs
+
+    # Apply low-pass filter (10 Hz cutoff)
+
+
+def explore_data_smoothing(processed_data, plot=False, cutoff=1.5, order=8, btype='low'):
+    data = processed_data[['msFromStart', 'alpha', 'beta', 'sqrt(X²+Y²+Z²)']]
+
+    time = data['msFromStart'].values / 1000  # Convert to seconds
+    alpha = data['alpha'].values
+    beta = data['beta'].values
+    magnitude = data['sqrt(X²+Y²+Z²)'].values
+
+    alpha_filtered, fs = apply_filter(alpha, time, cutoff, order, btype)
+    beta_filtered, fs = apply_filter(beta, time, cutoff, order, btype)
+
+    if plot:
+        plot_smoothing_frequency(alpha, alpha_filtered, beta, beta_filtered,
+                                 magnitude, cutoff, fs, time)
+
+    return alpha_filtered, beta_filtered
+
+
+def smoothing_investigation(all_tests_pisa):
+    for test in all_tests_pisa:
+        _, _ = explore_data_smoothing(test.processed_data)
+    return all_tests_pisa
+
+
+def plot_smoothing_frequency(alpha, alpha_filtered, beta, beta_filtered, magnitude, cutoff, fs, time):
+    def compute_spectrum(signal_data, fs):
+        n = len(signal_data)
+        freq = np.fft.rfftfreq(n, 1 / fs)
+        spectrum = np.abs(np.fft.rfft(signal_data))
+        # Normalize
+        spectrum = spectrum * 2 / n
+        return freq, spectrum
+
+    freq_alpha, spec_alpha = compute_spectrum(alpha, fs)
+    freq_beta, spec_beta = compute_spectrum(beta, fs)
+    freq_mag, spec_mag = compute_spectrum(magnitude, fs)
+    freq_alpha_filt, spec_alpha_filt = compute_spectrum(alpha_filtered, fs)
+    freq_beta_filt, spec_beta_filt = compute_spectrum(beta_filtered, fs)
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    # Subplot 1: Original time-series data with filtered signals overlaid
+    ax1.plot(time, alpha, label='Alpha', alpha=0.4, linewidth=1, color='C0')
+    ax1.plot(time, beta, label='Beta', alpha=0.4, linewidth=1, color='C1')
+    ax1.plot(time, magnitude, label='√(X²+Y²+Z²)', alpha=0.7, linewidth=1, color='C2')
+    ax1.plot(time, alpha_filtered, label=f'Alpha (filtered, {cutoff} Hz)', linewidth=1.5, color='C0',
+             linestyle='--')
+    ax1.plot(time, beta_filtered, label=f'Beta (filtered, {cutoff} Hz)', linewidth=1.5, color='C1', linestyle='--')
+    ax1.set_xlabel('Time (s)', fontsize=11)
+    ax1.set_ylabel('Amplitude', fontsize=11)
+    ax1.set_title(f'Original Time-Series Data with Low-Pass Filtered Signals ({cutoff} Hz)', fontsize=13,
+                  fontweight='bold')
+    ax1.legend(loc='best', fontsize=9)
+    ax1.grid(True, alpha=0.3)
+
+    # Subplot 2: Frequency spectrum
+    ax2.plot(freq_alpha, spec_alpha, label='Alpha', alpha=0.4, linewidth=1, color='C0')
+    ax2.plot(freq_beta, spec_beta, label='Beta', alpha=0.4, linewidth=1, color='C1')
+    ax2.plot(freq_mag, spec_mag, label='√(X²+Y²+Z²)', alpha=0.7, linewidth=1, color='C2')
+    ax2.plot(freq_alpha_filt, spec_alpha_filt, label=f'Alpha (filtered, {cutoff} Hz)', linewidth=1.5, color='C0',
+             linestyle='--')
+    ax2.plot(freq_beta_filt, spec_beta_filt, label=f'Beta (filtered, {cutoff} Hz)', linewidth=1.5, color='C1',
+             linestyle='--')
+    ax2.axvline(x=cutoff, color='red', linestyle=':', linewidth=2, label=f'{cutoff} Hz cutoff', alpha=0.7)
+    ax2.set_xlabel('Frequency (Hz)', fontsize=11)
+    ax2.set_ylabel('Magnitude', fontsize=11)
+    ax2.set_title('Frequency Spectrum', fontsize=13, fontweight='bold')
+    ax2.legend(loc='best', fontsize=9)
+    ax2.grid(True, alpha=0.3)
+    ax2.set_xlim(0, min(50, fs / 2))  # Show up to 50 Hz or Nyquist frequency
+
+    plt.tight_layout()
+    plt.show()
+
+    return None
+
+
+def investigate_tests_comments(all_tests, df_tests):
+    print(1)
+    # What do I do here with this now
+    return None

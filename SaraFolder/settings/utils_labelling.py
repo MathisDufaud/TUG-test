@@ -249,7 +249,7 @@ def last_peak(base_data, threshold = 1.2):
     return 0
 
 
-def plot_faulty_signal(df_plot, name):
+def plot_faulty_signal(df_plot, name, quality=None, stats=None, method='labelling'):
     fig, ax1 = plt.subplots(figsize=(10, 5))
     ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
              label="Motion (m/s²)", color="blue", linestyle="-")
@@ -280,6 +280,26 @@ def plot_faulty_signal(df_plot, name):
               #f"{user_id}_{session_id}, "
               #f"GTmanual = {np.round(gtm, 2)},"
               #f"GTgwalk = {np.round(gtg, 2)}")
+
+    # Add quality information box
+    if quality is not None and 'Quality' in name:
+        qualitytot = (quality['basic'] + quality[method]).split('/')
+        # Clean up the list
+        qualitytot = [q.strip() for q in qualitytot if q.strip() and q.strip() != 'okresults']
+
+        # Determine quality text and color
+        if not qualitytot or qualitytot == ['']:
+            quality_text = 'OK Quality'
+            box_color = '#90EE90'  # Light green
+        else:
+            quality_text = 'Quality Issues:\n' + '\n'.join([f'• {q}' for q in qualitytot])
+            box_color = '#FFB6C6'  # Light red
+
+        # Add text box in upper right corner
+        props = dict(boxstyle='round', facecolor=box_color, alpha=0.8, edgecolor='black', linewidth=1.5)
+        ax1.text(0.98, 0.98, quality_text, transform=ax1.transAxes,
+                 fontsize=9, verticalalignment='top', horizontalalignment='right',
+                 bbox=props)
 
     plt.title(name)
     plt.xticks(rotation=45)
@@ -319,8 +339,8 @@ def full_algo(df, dataset_id, name):
 
         if result is None:
             quality = 'No turns found with classic approach/'
-
-            plot_faulty_signal(df, 'Cant find turns: ' + name)
+            if False:
+                plot_faulty_signal(df, 'Cant find turns: ' + name)
             print("No found turns with first approach")
             df = utils_darioalgo.add_tug_features(df)
             search_start_ms, search_end_ms, peak1, peak2, tug_data, quality_dario = utils_darioalgo.find_peaks_algo(df)

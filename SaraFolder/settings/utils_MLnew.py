@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 
 import pandas as pd
 import numpy as np
@@ -33,7 +34,7 @@ def setup_manual_labelling_csv(all_tests, filename):
     return None
 
 
-def prep_data(all_tests, fold_idx=None, n_splits=5, window_size=60, stride=30, input_type='triaxial_acc'):
+def prep_data(all_tests, fold_idx=None, n_splits=5, window_size=60, stride=30, input_type='triaxial_acc', output_steps=0):
     """
     Prepare data for ML training while maintaining test boundaries.
 
@@ -76,18 +77,31 @@ def prep_data(all_tests, fold_idx=None, n_splits=5, window_size=60, stride=30, i
             continue
 
         # Create sequences with stride
+        # for i in range(0, n_samples - window_size + 1, stride):
+        #     X_list.append(test_data[i:i + window_size])
+        #     y_list.append(target_data[i:i + window_size])
+        #     test_indices.append(test_idx)
+
+        if output_steps>0:
+            target_start = window_size - output_steps
+        else:
+            target_start = 0
+
         for i in range(0, n_samples - window_size + 1, stride):
             X_list.append(test_data[i:i + window_size])
-            y_list.append(target_data[i:i + window_size])
+            y_list.append(target_data[i + target_start:i + window_size])
             test_indices.append(test_idx)
 
-    X = np.array(X_list)  # Shape: (n_sequences, window_size, n_features)
-    y = np.array(y_list)  # Shape: (n_sequences, window_size)
-    test_indices = np.array(test_indices)
+    X = np.array(X_list) # Shape: (n_sequences, window_size, n_features)
+    if output_steps>0:
+        y = np.expand_dims(np.array(y_list), axis=-1)  # (N, 15, 1)
+    else:
+        y = np.array(y_list)  # Shape: (n_sequences, window_size)
+        # Add dimension for binary classification if needed
+        if len(y.shape) == 2:
+            y = np.expand_dims(y, axis=-1)  # Shape: (n_sequences, window_size, 1)
 
-    # Add dimension for binary classification if needed
-    if len(y.shape) == 2:
-        y = np.expand_dims(y, axis=-1)  # Shape: (n_sequences, window_size, 1)
+    test_indices = np.array(test_indices)
 
     return X, y, test_indices
 
@@ -254,6 +268,66 @@ def evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indices
     return fold_models, holdout_results
 
 
+def reconstruct_from_windows_output(predictions, window_size, stride, original_length, output_steps):
+    # TODO: check
+    """
+    Reconstruct original sequence from overlapping window predictions
+    when each window predicts only the last `output_steps` timesteps.
+
+    Parameters
+    ----------
+    predictions : array-like, shape (n_windows, output_steps, n_features)
+        Model predictions for each window (last 15 timesteps per 60-sample window).
+    window_size : int
+        Size of each input window (e.g., 60).
+    stride : int
+        Step size used when sliding windows (e.g., 30).
+    original_length : int
+        Length of the original full sequence.
+    output_steps : int
+        Number of timesteps predicted per window (e.g., 15).
+
+    Returns
+    -------
+    reconstructed : array, shape (original_length, n_features)
+        Sequence reconstructed by averaging overlapping predictions.
+    counts : array, shape (original_length,)
+        Number of predictions contributing to each timestep.
+    """
+    n_windows = len(predictions)
+    n_features = predictions.shape[-1] if predictions.ndim == 3 else 1
+
+    reconstructed = np.zeros((original_length, n_features) if n_features > 1 else (original_length,))
+    counts = np.zeros(original_length)
+
+    for window_idx in range(n_windows):
+        # Position of this window in the original signal
+        start_idx = window_idx * stride
+        pred_start = start_idx + (window_size - output_steps)   # only last 15 samples
+        pred_end = pred_start + output_steps
+
+        # Handle boundary case (end of sequence)
+        valid_end = min(pred_end, original_length)
+        valid_steps = valid_end - pred_start
+        if valid_steps <= 0:
+            continue
+
+        if n_features > 1:
+            reconstructed[pred_start:valid_end] += predictions[window_idx, :valid_steps]
+        else:
+            reconstructed[pred_start:valid_end] += predictions[window_idx, :valid_steps].flatten()
+
+        counts[pred_start:valid_end] += 1
+
+    # Average overlapping predictions
+    counts = np.maximum(counts, 1)
+    if n_features > 1:
+        reconstructed = reconstructed / counts[:, np.newaxis]
+    else:
+        reconstructed = reconstructed / counts
+
+    return reconstructed, counts
+
 def reconstruct_from_windows(predictions, window_size, stride, original_length):
     """
     Reconstruct original sequence from overlapping window predictions.
@@ -352,7 +426,7 @@ def visualize_reconstruction(y_true, y_pred_windowed, y_pred_reconstructed,
     plt.show()
 
 
-def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_index, val_tests, fold, val_tests_original):
+def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=0):
     """
     Evaluate model performance at the TEST level, aggregating predictions per test.
 
@@ -392,20 +466,39 @@ def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_inde
         y_pred_test = modelObj.fitted_model.predict(X_val_test, verbose=0)
 
         # === RECONSTRUCTION TO ORIGINAL SIZE ===
-        y_pred_reconstructed, overlap_counts = reconstruct_from_windows(
-            predictions=y_pred_test,
-            window_size=60,  # Your window size
-            stride=running_settings.parameters['stride'],  # Your stride
-            original_length=len(original_test.processed_data)
-        )
+        if output_steps==0:
+            y_pred_reconstructed, overlap_counts = reconstruct_from_windows(
+                predictions=y_pred_test,
+                window_size=60,  # Your window size
+                stride=running_settings.parameters['stride'],  # Your stride
+                original_length=len(original_test.processed_data)
+            )
 
-        # Also reconstruct ground truth
-        y_true_original, overlap_counts_true = reconstruct_from_windows(
-            predictions=y_val_test,
-            window_size=60,
-            stride=running_settings.parameters['stride'],
-            original_length=len(original_test.processed_data)
-        )
+            # Also reconstruct ground truth
+            y_true_original, overlap_counts_true = reconstruct_from_windows(
+                predictions=y_val_test,
+                window_size=60,
+                stride=running_settings.parameters['stride'],
+                original_length=len(original_test.processed_data)
+            )
+        else:
+            y_pred_reconstructed, overlap_counts = reconstruct_from_windows_output(
+                predictions=y_pred_test,
+                window_size=60,  # Your window size
+                stride=running_settings.parameters['stride'],  # Your stride
+                original_length=len(original_test.processed_data),
+                output_steps=output_steps
+            )
+
+            # Also reconstruct ground truth
+            y_true_original, overlap_counts_true = reconstruct_from_windows_output(
+                predictions=y_val_test,
+                window_size=60,
+                stride=running_settings.parameters['stride'],
+                original_length=len(original_test.processed_data),
+                output_steps=output_steps
+            )
+
 
         # Now you have original-sized arrays
         print(f"Original test length: {len(original_test.processed_data)}")
@@ -466,7 +559,7 @@ def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_inde
     return test_results_df, test_level_metrics, val_tests_original
 
 
-def evaluate_cv_per_test(modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original):
+def evaluate_cv_per_test(modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps):
     """
     Evaluate model performance at the TEST level, aggregating predictions per test.
 
@@ -501,21 +594,36 @@ def evaluate_cv_per_test(modelObj, X_val, y_val, val_test_index, val_tests, fold
         # Get predictions for validation set
         y_pred_test = modelObj.fitted_model.predict(X_val_test, verbose=0)
 
-        # === RECONSTRUCTION TO ORIGINAL SIZE ===
-        y_pred_reconstructed, overlap_counts = reconstruct_from_windows(
-            predictions=y_pred_test,
-            window_size=60,  # Your window size
-            stride=running_settings.parameters['stride'],  # Your stride
-            original_length=len(original_test.processed_data)
-        )
+        if output_steps == 0:
+            y_pred_reconstructed, overlap_counts = reconstruct_from_windows(
+                predictions=y_pred_test,
+                window_size=60,  # Your window size
+                stride=running_settings.parameters['stride'],  # Your stride
+                original_length=len(original_test.processed_data)
+            )
 
-        # Also reconstruct ground truth
-        y_true_original, overlap_counts_true = reconstruct_from_windows(
-            predictions=y_val_test,
-            window_size=60,
-            stride=running_settings.parameters['stride'],
-            original_length=len(original_test.processed_data)
-        )
+            y_true_original, overlap_counts_true = reconstruct_from_windows(
+                predictions=y_val_test,
+                window_size=60,
+                stride=running_settings.parameters['stride'],
+                original_length=len(original_test.processed_data)
+            )
+        else:
+            y_pred_reconstructed, overlap_counts = reconstruct_from_windows_output(
+                predictions=y_pred_test,
+                window_size=60,  # Your window size
+                stride=running_settings.parameters['stride'],  # Your stride
+                original_length=len(original_test.processed_data),
+                output_steps=output_steps
+            )
+
+            y_true_original, overlap_counts_true = reconstruct_from_windows_output(
+                predictions=y_val_test,
+                window_size=60,
+                stride=running_settings.parameters['stride'],
+                original_length=len(original_test.processed_data),
+                output_steps=output_steps
+            )
 
         # Now you have original-sized arrays
         print(f"Original test length: {len(original_test.processed_data)}")
@@ -760,9 +868,152 @@ def kfold_validation(all_tests, n_splits):
 
     return split_loop, holdout_tests_original, holdout_tests
 
+def kfold_validation_equalsplit(all_tests, n_splits):
+    # kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    n_tests = len(all_tests)
+    # test_indices = np.arange(n_tests)
+    n_splits=5
+
+    # Group tests by dataset_id
+    train_val_groups = {}
+    for idx, test in enumerate(all_tests):
+        dataset_id = test.dataset_id
+        if dataset_id not in train_val_groups:
+            train_val_groups[dataset_id] = []
+        train_val_groups[dataset_id].append(idx)
+
+    n_datasets = len(train_val_groups)
+    print(f"\n{'=' * 60}")
+    print(f"Train+Val Tests Distribution:")
+    print(f"{'=' * 60}")
+    for dataset_id, indices in train_val_groups.items():
+        print(f"Dataset {dataset_id}: {len(indices)} tests")
+    print(f"Total datasets: {n_datasets}")
+    print(f"Total train+val tests: {len(all_tests)}")
+
+    # Create stratified splits
+    folds = [[] for _ in range(n_splits)]
+
+    for dataset_id, indices in train_val_groups.items():
+        indices = np.array(indices)
+        np.random.seed(42)
+        np.random.shuffle(indices)
+
+        # Distribute tests from this dataset across folds as evenly as possible
+        for i, idx in enumerate(indices):
+            fold_num = i % n_splits
+            folds[fold_num].append(idx)
+
+    # Shuffle each fold to mix datasets
+    np.random.seed(42)
+    for fold in folds:
+        np.random.shuffle(fold)
+
+    # Print distribution for each fold
+    for fold_num, fold_indices in enumerate(folds):
+        fold_tests = [all_tests[i] for i in fold_indices]
+        fold_dataset_counts = Counter([test.dataset_id for test in fold_tests])
+        print(f"\nFold {fold_num + 1}:")
+        for dataset_id in sorted(train_val_groups.keys()):
+            count = fold_dataset_counts.get(dataset_id, 0)
+            print(f"  Dataset {dataset_id}: {count} tests")
+        print(f"  Total: {len(fold_indices)} tests")
+
+    # Create generator for splits
+    def split_generator():
+        for val_fold_num in range(n_splits):
+            val_indices = np.array(folds[val_fold_num])
+            train_indices = np.array([idx for i, fold in enumerate(folds)
+                                      if i != val_fold_num for idx in fold])
+
+            print(f"\n{'=' * 60}")
+            print(f"Current Split: Fold {val_fold_num + 1} as Validation")
+            print(f"{'=' * 60}")
+
+            # Show dataset distribution for this split
+            train_tests = [all_tests[i] for i in train_indices]
+            val_tests = [all_tests[i] for i in val_indices]
+
+            train_dataset_counts = Counter([test.dataset_id for test in train_tests])
+            val_dataset_counts = Counter([test.dataset_id for test in val_tests])
+
+            print(f"Training set:")
+            for dataset_id in sorted(train_val_groups.keys()):
+                count = train_dataset_counts.get(dataset_id, 0)
+                print(f"  Dataset {dataset_id}: {count} tests")
+            print(f"  Total: {len(train_indices)} tests")
+
+            print(f"Validation set:")
+            for dataset_id in sorted(train_val_groups.keys()):
+                count = val_dataset_counts.get(dataset_id, 0)
+                print(f"  Dataset {dataset_id}: {count} tests")
+            print(f"  Total: {len(val_indices)} tests")
+
+            yield train_indices, val_indices
+
+    split_loop = split_generator()
+
+    return split_loop
+
+
+def verify_stratification(all_tests, split_loop, n_splits=5):
+    """
+    Verify that the stratification worked correctly.
+    """
+    print(f"\n{'=' * 60}")
+    print(f"VERIFICATION: Checking Dataset Distribution Across Folds")
+    print(f"{'=' * 60}")
+
+    # Count dataset distribution in full train_val set
+    full_dataset_counts = Counter([test.dataset_id for test in all_tests])
+    expected_per_fold = {ds: count / n_splits for ds, count in full_dataset_counts.items()}
+
+    print(f"\nExpected tests per fold (average):")
+    for dataset_id, count in sorted(expected_per_fold.items()):
+        print(f"  Dataset {dataset_id}: {count:.1f} tests")
+
+    # Check each fold
+    fold_num = 1
+    max_deviation = {}
+
+    for train_idx, val_idx in split_loop:
+        val_tests = [all_tests[i] for i in val_idx]
+        val_dataset_counts = Counter([test.dataset_id for test in val_tests])
+
+        print(f"\nFold {fold_num} validation set:")
+        for dataset_id in sorted(full_dataset_counts.keys()):
+            actual = val_dataset_counts.get(dataset_id, 0)
+            expected = expected_per_fold[dataset_id]
+            deviation = abs(actual - expected)
+
+            if dataset_id not in max_deviation:
+                max_deviation[dataset_id] = 0
+            max_deviation[dataset_id] = max(max_deviation[dataset_id], deviation)
+
+            print(f"  Dataset {dataset_id}: {actual} tests (expected: {expected:.1f}, deviation: {deviation:.1f})")
+
+        fold_num += 1
+
+    print(f"\n{'=' * 60}")
+    print(f"Maximum Deviation from Expected:")
+    print(f"{'=' * 60}")
+    for dataset_id, deviation in sorted(max_deviation.items()):
+        print(f"Dataset {dataset_id}: {deviation:.1f} tests")
+
+    if all(dev <= 1 for dev in max_deviation.values()):
+        print(f"\n✓ Stratification is well-balanced (max deviation ≤ 1 test)")
+    else:
+        print(f"\n⚠ Some imbalance detected (this is normal for small datasets)")
+
+
+def apply_data_augmentation(X_train, y_train, X_val, y_val):
+
+
+    return X_train, y_train, X_val, y_val
+
 
 def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
-                n_splits=5, architecture='', training_epochs=5, save_model=False, input_type='triaxial', method=''):
+                n_splits=5, architecture='', training_epochs=5, save_model=False, input_type='triaxial', method='', output_steps=0):
     """
     Train ML model with optional cross-validation.
 
@@ -779,11 +1030,15 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
     load_existing = running_settings.load_existing_model
     modelcomments = running_settings.model_comments
 
-    X, y, test_index = prep_data(all_tests, stride=running_settings.parameters['stride'], input_type=input_type)
+    X, y, test_index = prep_data(all_tests, stride=running_settings.parameters['stride'], input_type=input_type, output_steps=output_steps)
 
     if use_cv and not load_existing:
         if isinstance(n_splits, int):
             split_loop, holdout_tests_original, holdout_tests = kfold_validation(all_tests, n_splits=n_splits)
+
+        elif n_splits == 'equalcvsplit':
+            split_loop = kfold_validation_equalsplit(all_tests, n_splits=5)
+            holdout_tests_original, holdout_tests = [], []
 
         elif n_splits == 'lopo':
             split_loop, n_splits, holdout_tests_original, holdout_tests = lopo_validation(all_tests)
@@ -825,10 +1080,12 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
 
                     val_test_index = test_index[np.isin(test_index, val_fold_idx)]
 
+                    X_train, y_train, X_val, y_val = apply_data_augmentation(X_train, y_train, X_val, y_val)
+
                     # Define and train model
                     fold_model_name = f"{model_name.replace('.h5', '')}_fold{fold + 1}.h5"
                     modelObj = classes.MlModel(model_name=fold_model_name)
-                    modelObj.define_model(save_model=save_model, n_features=X.shape[2], architecture=architecture)
+                    modelObj.define_model(save_model=save_model, n_features=X.shape[2], architecture=architecture, output_steps=output_steps)
                     modelObj.model_fit(
                         X_train, y_train, X_val, y_val,
                         plot=False,
@@ -844,7 +1101,7 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
 
                     # Test-level evaluation
                     test_results_df, test_level_metrics, val_tests_original = evaluate_cv_per_test(
-                        modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
+                        modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=output_steps
                     )
                     original_tests_fold[fold] = val_tests_original
 
@@ -906,7 +1163,6 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
                                                                                                           holdout_tests_original)
 
         observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method.strip('.h5'), modelname=model_name.strip('.h5'))
-
         return best_model
 
     else:

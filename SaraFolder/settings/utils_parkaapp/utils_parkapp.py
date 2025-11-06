@@ -434,7 +434,7 @@ def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp', skip
                 test.gt_total_gwalk = times_gwalk[user]['day60']
 
         test.raw_data = t
-        test.processed_data = t
+        test.processed_data = utils_pisatugloaders.process_data(t)
         test.processed_data = test.processed_data.dropna().reset_index(drop=True)
 
         if k[:-2] not in df_gt_dict.keys() and test.context == 'unsupervised':
@@ -456,6 +456,15 @@ def return_context_tests(tests, context):
 
     return all_tests
 
+
+def process_tests_data(all_tests):
+    for test in all_tests:
+        test.processed_data = utils_pisatugloaders.process_data(test.raw_data)
+        # # Remove nan rows
+        test.processed_data = test.processed_data.dropna().reset_index(drop=True)
+    return all_tests
+
+
 def load_all_tests(dataset_id, context='supervised'):
 
     if dataset_id == 'parkapp':
@@ -463,6 +472,7 @@ def load_all_tests(dataset_id, context='supervised'):
         df_gt_dict, times_gwalk = load_groundtruth_dict()
         tests, _ = set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id=dataset_id)
         all_tests = return_context_tests(tests, context)
+        all_tests = [test for test in all_tests if test.user_id + '_' + str(test.session_id) != '19_parkapp_1']
 
     elif dataset_id == 'synergy' or dataset_id == 'pisa':
             if dataset_id == 'synergy':
@@ -470,6 +480,9 @@ def load_all_tests(dataset_id, context='supervised'):
                     with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'rb') as handle:
                         tests = pickle.load(handle)
                     all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
+
+                    # Process raw data
+                    all_tests = process_tests_data(all_tests)
                 else:
                     tests = utils_pisatugloaders.load_synpisatests()
                     tests = [test for test in tests if test.dataset_id == 'synergy']
@@ -483,6 +496,9 @@ def load_all_tests(dataset_id, context='supervised'):
                 if 'pisa_tests.pickle' in os.listdir(running_settings.data_synpisa):
                     with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'rb') as handle:
                         all_tests = pickle.load(handle)
+
+                    # Process raw data
+                    all_tests = process_tests_data(all_tests)
                 else:
                     tests = utils_pisatugloaders.load_synpisatests()
                     tests = [test for test in tests if test.dataset_id == 'pisa']

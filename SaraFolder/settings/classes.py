@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 from keras.src.callbacks import EarlyStopping, ReduceLROnPlateau
-from keras.src.layers import BatchNormalization, Activation, Concatenate, Input, Add
+from keras.src.layers import BatchNormalization, Activation, Concatenate, Input, Add, Lambda
 from keras.src.optimizers.adam import Adam
 from keras import metrics, Model
 from keras.callbacks import ModelCheckpoint
@@ -313,13 +313,17 @@ class TUGTest:
 
 
 
-    def data_quality_investigation(self, plot=False):
+    def data_quality_investigation(self, plot=False, method='labelling'):
         print(f"Investigating data quality for {self.user_id}_{self.session_id}")
-
+        self.plot_labelling(method=method, plot=False)
         stats = utils_dataquality.compute_test_stats(self.processed_data)
 
         self.data_quality_stats = stats
 
+        if plot:
+            utils_labelling.plot_faulty_signal(self.processed_data,
+                                               f"Test:{self.user_id+'_'+ str(self.session_id)} Quality",
+                                               quality=self.quality, stats=None)
         pass
 
 
@@ -331,7 +335,7 @@ class MlModel:
         # Identifiers
         self.model_name = model_name
 
-    def define_model(self, window_size=60, n_features=9, architecture='', save_model=False):
+    def define_model(self, window_size=60, n_features=9, architecture='', save_model=False, output_steps=0):
         """
         Define model with multiple architecture options.
 
@@ -345,6 +349,8 @@ class MlModel:
             model = self._build_tcn_residual(window_size, n_features)
         elif architecture == 'strongbs':
             model = self._build_strong_baseline(window_size, n_features)
+        elif architecture == 'bs_predictbatch':
+            model = self._build_strong_baseline_batch(window_size, n_features, output_steps=output_steps)
         else:
             model = self._build_simple_lstm(window_size, n_features)
 
@@ -516,4 +522,31 @@ class MlModel:
         # Multiply attention weights and features
         out_seq = TimeDistributed(Dense(1, activation='sigmoid'))(x)
         model = Model(inp, out_seq)
+        return model
+
+    def _build_strong_baseline_batch(self, window_size=60, n_features=9, output_steps=15):
+        inp = Input(shape=(window_size, n_features))
+
+        # Multi-scale convs
+        c1 = Conv1D(64, 3, padding='same', activation='relu')(inp)
+        c1 = BatchNormalization()(c1)
+        c2 = Conv1D(64, 5, padding='same', activation='relu')(inp)
+        c2 = BatchNormalization()(c2)
+        c3 = Conv1D(64, 7, padding='same', activation='relu')(inp)
+        c3 = BatchNormalization()(c3)
+        x = Concatenate()([c1, c2, c3])   # (batch, 60, 192)
+        x = Dropout(0.2)(x)
+
+        # Temporal modeling
+        x = Bidirectional(LSTM(64, return_sequences=True))(x)  # (batch, 60, 128)
+        x = Dropout(0.3)(x)
+
+        # Keep only the last 15 timesteps
+        x = Lambda(lambda t: t[:, -output_steps:, :])(x)  # (batch, 15, 128)
+
+        # Predict for each of those 15 timesteps
+        out_seq = TimeDistributed(Dense(1, activation='sigmoid'))(x)  # (batch, 15, 1)
+
+        model = Model(inp, out_seq)
+
         return model

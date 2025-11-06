@@ -10,7 +10,7 @@ from pingouin import intraclass_corr
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 plt.ion()
-from SaraFolder.settings import running_settings, classes, utils_plots
+from SaraFolder.settings import running_settings, classes, utils_plots, utils_dataquality
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 from SaraFolder.settings.utils_synergy import utils_synloaders
 
@@ -436,11 +436,9 @@ def load_test(path, test_id, df_tug_ref):
                 df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
 
                 test.raw_data = df_merged
-                if df_merged.shape[0] == 0:
-                    print(1)
-                test.processed_data = process_data(df_merged)
-                # Remove nan rows
-                test.processed_data = test.processed_data.dropna().reset_index(drop=True)
+                # test.processed_data = process_data(df_merged)
+                # # Remove nan rows
+                # test.processed_data = test.processed_data.dropna().reset_index(drop=True)
                 tests.append(test)
             else:
                 print("Motion or orientation dataframes are empty")
@@ -496,20 +494,39 @@ def resample60(df_raw):
     return df_final
 
 
+def smoothalphabeta(df_final, cutoff=1, order=8, btype='low', plot=False):
+    alpha_filtered, beta_filtered = utils_dataquality.explore_data_smoothing(df_final,
+                                                                             cutoff=cutoff,
+                                                                             order=order,
+                                                                             btype=btype,
+                                                                             plot=plot)
+    df_final['alpha'] = alpha_filtered
+    df_final['beta'] = beta_filtered
+    return df_final
+
+
 def process_data(df_raw):
 
     if len(df_raw) > 0:
-        df_raw['relative_timestamp'] = pd.to_timedelta(df_raw['msFromStart'], unit='milliseconds').dt.total_seconds()
+        if not 'relative_timestamp' in df_raw.columns:
+            df_raw['relative_timestamp'] = pd.to_timedelta(df_raw['msFromStart'], unit='milliseconds').dt.total_seconds()
 
-        df_raw['sqrt(X²+Y²+Z²)'] = np.sqrt((np.abs(df_raw['accX']))**2 +
+        if not 'sqrt(X²+Y²+Z²)' in df_raw.columns:
+            df_raw['sqrt(X²+Y²+Z²)'] = np.sqrt((np.abs(df_raw['accX']))**2 +
                                            (np.abs(df_raw['accY']))**2 +
                                            (np.abs(df_raw['accZ']))**2)
 
         df_final = resample60(df_raw)
-        df_final = df_final.rename(columns={'orA':'alpha', 'orB':'beta', 'orG':'gamma'})
-        df_final = df_final.rename(columns={'rotA':'rotRate.alpha', 'rotB':'rotRate.beta', 'rotG':'rotRate.gamma'})
-        df_final = df_final.rename(columns={'accX':'acc.x', 'accY':'acc.y', 'accZ':'acc.z'})
-        df_final = utils_parkapp.new_columns(df_final)
+
+        if 'orA' in df_final.columns:
+            df_final = df_final.rename(columns={'orA':'alpha', 'orB':'beta', 'orG':'gamma'})
+            df_final = df_final.rename(columns={'rotA':'rotRate.alpha', 'rotB':'rotRate.beta', 'rotG':'rotRate.gamma'})
+            df_final = df_final.rename(columns={'accX':'acc.x', 'accY':'acc.y', 'accZ':'acc.z'})
+
+        if 'all' not in df_final:
+            df_final = utils_parkapp.new_columns(df_final)
+
+        df_final = smoothalphabeta(df_final, plot=False)
 
         return df_final
     else:
