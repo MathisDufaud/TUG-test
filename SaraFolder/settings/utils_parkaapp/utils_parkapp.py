@@ -506,6 +506,20 @@ def load_all_tests(dataset_id, context='supervised'):
                     with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'wb') as handle:
                         pickle.dump(all_tests, handle)
 
+            elif dataset_id == 'pisa_new':
+                if 'pisa_new_tests.pickle' in os.listdir(running_settings.data_synpisa):
+                    with open(running_settings.data_synpisa + os.sep + 'pisa_new.pickle', 'rb') as handle:
+                        all_tests = pickle.load(handle)
+
+                    # Process raw data
+                    all_tests = process_tests_data(all_tests)
+                else:
+                    tests = utils_pisatugloaders.load_newpisa()
+                    tests = [test for test in tests if test.dataset_id == 'pisa_new']
+                    all_tests = return_context_tests(tests, context)
+                    with open(running_settings.data_synpisa + os.sep + 'pisa_new.pickle', 'wb') as handle:
+                        pickle.dump(all_tests, handle)
+
     return all_tests
 
 

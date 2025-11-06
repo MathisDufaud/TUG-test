@@ -531,3 +531,8 @@ def process_data(df_raw):
         return df_final
     else:
         return 'empty df raw'
+
+
+def load_newpisa():
+    
+    return None
