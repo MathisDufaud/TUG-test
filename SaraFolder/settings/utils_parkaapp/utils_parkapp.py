@@ -474,7 +474,7 @@ def load_all_tests(dataset_id, context='supervised'):
         all_tests = return_context_tests(tests, context)
         all_tests = [test for test in all_tests if test.user_id + '_' + str(test.session_id) != '19_parkapp_1']
 
-    elif dataset_id == 'synergy' or dataset_id == 'pisa':
+    elif dataset_id == 'synergy' or 'pisa' in dataset_id:
             if dataset_id == 'synergy':
                 if 'synergy_tests.pickle' in os.listdir(running_settings.data_synpisa):
                     with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'rb') as handle:
