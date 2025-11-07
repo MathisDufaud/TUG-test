@@ -308,10 +308,10 @@ def plot_faulty_signal(df_plot, name, quality=None, stats=None, method='labellin
 
 
 def check_emptiness_3sec(df, dataset_id):
+
     if df.empty:
         quality = 'Empty df (1)/'
         return "empty df", quality
-
     # remove first 3 sec
     if dataset_id == 'parkapp':
         df = df.loc[(df['relative_timestamp'] >= 3)]
@@ -330,7 +330,7 @@ def full_algo(df, dataset_id, name):
         return df, quality
 
     df.reset_index(drop=True, inplace=True)
-    print("FS: ", np.round(df.shape[0] / ((df.iloc[-1, 0] - df.iloc[0, 0]) / 1000), 2))
+    # print("FS: ", np.round(df.shape[0] / ((df.iloc[-1, 0] - df.iloc[0, 0]) / 1000), 2))
 
     # find the 2 turns. 20 samples correspond approx to 1/3 seconds
     alpha_ma = utils_parkapp.moving_average(df['alpha'], 20)
@@ -631,17 +631,20 @@ def darioalgo_method(test):
 
 
 def compute_method(test, method):
+    print(f"Computing method: {method}, for {test.user_id}_{test.session_id}")
+    try:
+        quality_0 = utils_dataquality.quality_assessment(test.processed_data, test.dataset_id)
+        test.quality['basic'] = quality_0
 
-    quality_0 = utils_dataquality.quality_assessment(test.processed_data, test.dataset_id)
-    test.quality['basic'] = quality_0
+        if method == 'labelling':
+            test, quality_1 = labelling_method(test)
+            test.quality[method] = quality_1
 
-    if method == 'labelling':
-        test, quality_1 = labelling_method(test)
-        test.quality[method] = quality_1
-
-    if method == 'darioalgo':
-        test, quality_1 = darioalgo_method(test)
-        test.quality[method] = quality_1
+        if method == 'darioalgo':
+            test, quality_1 = darioalgo_method(test)
+            test.quality[method] = quality_1
+    except:
+        print(1)
     pass
 
 def compute_method_optimization(test, method):

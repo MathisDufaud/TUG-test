@@ -9,12 +9,11 @@ matplotlib.use('TkAgg')
 
 if __name__ == "__main__":
     all_tests_pisa_new = utils_parkapp.load_all_tests(dataset_id = 'pisa_new', context='supervised')
-
-    all_tests_parkapp = utils_parkapp.load_all_tests(dataset_id ='parkapp', context='supervised')
     all_tests_pisa = utils_parkapp.load_all_tests(dataset_id = 'pisa', context='supervised')
-
+    all_tests_pisa_new = utils_parkapp.merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new)
+    all_tests_parkapp = utils_parkapp.load_all_tests(dataset_id ='parkapp', context='supervised')
     all_tests_synergy = utils_parkapp.load_all_tests(dataset_id = 'synergy', context='supervised')
-    all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp]))
+    all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp, all_tests_pisa_new]))
 
     # All tests overview:
     if False:
@@ -23,7 +22,7 @@ if __name__ == "__main__":
 
     # Run algorithms
     if True:
-        method = 'labelling' # darioalgo or labelling
+        method = 'darioalgo' # darioalgo or labelling
         utils_labelling.labelling_acrossall(all_tests, method=method)
         blacklist = utils_labelling.observe_noresult_tests([test for test in all_tests if isinstance(test.results[method],str)], method='labelling')
 

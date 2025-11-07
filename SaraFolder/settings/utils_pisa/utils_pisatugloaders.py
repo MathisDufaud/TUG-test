@@ -445,49 +445,66 @@ def load_test(path, test_id, df_tug_ref):
 
     return tests, test_id
 
-def load_test_newpisa(path, test_id):
-    tests = []
-    participant = path.split(os.sep)[-1].split("_")[1]
 
-    tests_csvs = [f for f in os.listdir(path) if f.startswith("tug")]
-    unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in tests_csvs])
-    dataset = 'pisa'
+def upload_gt_newpisa(path):
+    import re
+    for element in os.listdir(path):
+        if element.endswith("Summary_TUG.txt"):
+            gt_file = path + os.sep + element
+            with open(gt_file, 'r', encoding='utf-16') as f:
+                content = f.read()
 
-    for i, t in enumerate(unique_tests):
-        test_id += 1
-        motion = path + os.sep + 'tug_motion.csv'
-        orientation = path + os.sep + 'tug_orientation.csv'
+            # Search for the pattern
+            match = re.search(r'Analysis Duration \(s\)\s+([0-9.]+)', content)
 
-        if os.path.exists(motion) and os.path.exists(orientation):
-            test = classes.TUGTest(test_id = test_id,
-                                   session_id = int(t),
-                                   user_id = str(int(participant)) + '_' + dataset,
-                                   dataset_id = dataset)
-
-            context = 'supervised'
-            test.context = context
-
-            # TODO gt here
-            test.gt_total_manual = None
-
-            df_motion = pd.read_csv(motion)
-            df_orientation = pd.read_csv(orientation)
-            if df_motion.shape[0] != 0 and df_orientation.shape[0] != 0:
-                df_orientation = twitching_orientationalpha(df_orientation)
-
-                # Merge on timestamp column
-                df_motion = df_motion.sort_values('msFromStart')
-                df_orientation = df_orientation.sort_values('msFromStart')
-
-                df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
-
-                test.raw_data = df_merged
-                # test.processed_data = process_data(df_merged)
-                # # Remove nan rows
-                # test.processed_data = test.processed_data.dropna().reset_index(drop=True)
-                tests.append(test)
+            if match:
+                duration = float(match.group(1))
+                return duration
             else:
-                print("Motion or orientation dataframes are empty")
+                print("bug")
+                return None
+    return None
+
+
+
+
+def load_test_newpisa(path, test_id, participant):
+    tests = []
+
+    dataset = 'pisa_new'
+    test_id += 1
+    motion = path + os.sep + 'tug_motion.csv'
+    orientation = path + os.sep + 'tug_orientation.csv'
+
+    if os.path.exists(motion) and os.path.exists(orientation):
+        test = classes.TUGTest(test_id = test_id,
+                               session_id = 1, # TODO careful here
+                               user_id = str(participant) + '_' + dataset,
+                               dataset_id = dataset)
+
+        context = 'supervised'
+        test.context = context
+
+        test.gt_total_manual = np.nan
+        test.gt_total_gwalk = upload_gt_newpisa(path=path.strip(r'\\TUG_raw'))
+
+        df_motion = pd.read_csv(motion)
+        df_orientation = pd.read_csv(orientation)
+        if df_motion.shape[0] != 0 and df_orientation.shape[0] != 0:
+            df_orientation = twitching_orientationalpha(df_orientation)
+
+            # Merge on timestamp column
+            df_motion = df_motion.sort_values('msFromStart')
+            df_orientation = df_orientation.sort_values('msFromStart')
+
+            df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
+
+            test.raw_data = df_merged
+            tests.append(test)
+        else:
+            print("Motion or orientation dataframes are empty")
+            test.raw_data = pd.DataFrame()
+            test.processed_data = pd.DataFrame()
 
     return tests, test_id
 
@@ -586,11 +603,12 @@ def load_newpisa():
     for t in os.listdir(data_path):
         if os.path.isdir(data_path + os.sep + t) and t.startswith("a"):
             print("################################ Participant folder: ", t)
-            tests, test_id = load_test_newpisa(data_path + os.sep + t, test_id)
+            tug_path = data_path + os.sep + t + os.sep + "PreIntervention" + os.sep + 'TUG_raw'
+            tests, test_id = load_test_newpisa(tug_path, test_id, participant=t.split("_")[1])
             all_tests.extend(tests)
         print("\n")
 
     print("Keeping tests only if GT is available")
     returntests = [test for test in all_tests if not np.isnan(test.gt_total_manual) or not np.isnan(test.gt_total_gwalk)]
 
-    return None
+    return returntests

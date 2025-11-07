@@ -475,50 +475,44 @@ def load_all_tests(dataset_id, context='supervised'):
         all_tests = [test for test in all_tests if test.user_id + '_' + str(test.session_id) != '19_parkapp_1']
 
     elif dataset_id == 'synergy' or 'pisa' in dataset_id:
-            if dataset_id == 'synergy':
-                if 'synergy_tests.pickle' in os.listdir(running_settings.data_synpisa):
-                    with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'rb') as handle:
-                        tests = pickle.load(handle)
-                    all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
+        if dataset_id == 'synergy':
+            if 'synergy_tests.pickle' in os.listdir(running_settings.data_synpisa):
+                with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'rb') as handle:
+                    tests = pickle.load(handle)
+                all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
 
-                    # Process raw data
-                    all_tests = process_tests_data(all_tests)
-                else:
-                    tests = utils_pisatugloaders.load_synpisatests()
-                    tests = [test for test in tests if test.dataset_id == 'synergy']
-                    tests = return_context_tests(tests, context)
-                    all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
+            else:
+                tests = utils_pisatugloaders.load_synpisatests()
+                tests = [test for test in tests if test.dataset_id == 'synergy']
+                tests = return_context_tests(tests, context)
+                all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
 
-                    with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'wb') as handle:
-                        pickle.dump(all_tests, handle)
+                with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'wb') as handle:
+                    pickle.dump(all_tests, handle)
 
-            elif dataset_id == 'pisa':
-                if 'pisa_tests.pickle' in os.listdir(running_settings.data_synpisa):
-                    with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'rb') as handle:
-                        all_tests = pickle.load(handle)
+        elif dataset_id == 'pisa':
+            if 'pisa_tests.pickle' in os.listdir(running_settings.data_synpisa):
+                with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'rb') as handle:
+                    all_tests = pickle.load(handle)
+            else:
+                tests = utils_pisatugloaders.load_synpisatests()
+                tests = [test for test in tests if test.dataset_id == 'pisa']
+                all_tests = return_context_tests(tests, context)
+                with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'wb') as handle:
+                    pickle.dump(all_tests, handle)
 
-                    # Process raw data
-                    all_tests = process_tests_data(all_tests)
-                else:
-                    tests = utils_pisatugloaders.load_synpisatests()
-                    tests = [test for test in tests if test.dataset_id == 'pisa']
-                    all_tests = return_context_tests(tests, context)
-                    with open(running_settings.data_synpisa + os.sep + 'pisa_tests.pickle', 'wb') as handle:
-                        pickle.dump(all_tests, handle)
-
-            elif dataset_id == 'pisa_new':
-                if 'pisa_new_tests.pickle' in os.listdir(running_settings.data_synpisa):
-                    with open(running_settings.data_synpisa + os.sep + 'pisa_new.pickle', 'rb') as handle:
-                        all_tests = pickle.load(handle)
-
-                    # Process raw data
-                    all_tests = process_tests_data(all_tests)
-                else:
-                    tests = utils_pisatugloaders.load_newpisa()
-                    tests = [test for test in tests if test.dataset_id == 'pisa_new']
-                    all_tests = return_context_tests(tests, context)
-                    with open(running_settings.data_synpisa + os.sep + 'pisa_new.pickle', 'wb') as handle:
-                        pickle.dump(all_tests, handle)
+        elif dataset_id == 'pisa_new':
+            if 'pisa_new.pickle' in os.listdir(running_settings.data_synpisa):
+                with open(running_settings.data_synpisa + os.sep + 'pisa_new.pickle', 'rb') as handle:
+                    all_tests = pickle.load(handle)
+            else:
+                tests = utils_pisatugloaders.load_newpisa()
+                tests = [test for test in tests if test.dataset_id == 'pisa_new']
+                all_tests = return_context_tests(tests, context)
+                with open(running_settings.data_synpisa + os.sep + 'pisa_new.pickle', 'wb') as handle:
+                    pickle.dump(all_tests, handle)
+        # Process raw data
+        all_tests = process_tests_data(all_tests)
 
     return all_tests
 
@@ -569,3 +563,19 @@ def load_all_tests_skipped(dataset_id, context='supervised'):
         utils_dataquality.observesingletests_skipped(skipped_tests, method=None, title='skippedtests_motivation.csv')
 
     return all_tests
+
+
+def merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new):
+    all_users_old = [test.user_id.split('_')[0] for test in all_tests_pisa]
+    for test in all_tests_pisa_new:
+        user_id = test.user_id.split('_')[0]
+        if test.raw_data is None:
+            test.raw_data = pd.DataFrame()
+            test.processed_data = pd.DataFrame()
+        if user_id in all_users_old:
+            # print(f"User {user_id} already in old Pisa tests.")
+            test.session_id += 1
+            test.user_id = f"{user_id}_pisa"
+            test.dataset_id = 'pisa'
+
+    return all_tests_pisa_new
