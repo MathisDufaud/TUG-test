@@ -762,7 +762,7 @@ def evaluate_duration_tests(holdout_tests_original, method):
 
 def observe_performance_per_test(original_tests_fold, holdout_tests_original, method, modelname):
     # Observe performances across tests
-    if len(holdout_tests_original)>0:
+    if len(holdout_tests_original) > 0:
         holdout_tests_original = evaluate_duration_tests(holdout_tests_original, method)
 
         utils_evaluation.evaluate_results(list(holdout_tests_original.values()), eval_type='duration',
@@ -1154,6 +1154,7 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
             # Evaluate on holdout set
             fold_models, holdout_results = evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indeces,
                                                             test_index, holdout_tests, save=False)
+
             # modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
             holdout_results_df, holdout_level_metrics, holdout_tests_original = evaluate_holdout_per_test(best_model,
                                                                                                           best_scaler, X, y,

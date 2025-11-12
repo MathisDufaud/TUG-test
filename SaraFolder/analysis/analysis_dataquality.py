@@ -25,6 +25,7 @@ if __name__ == "__main__":
     all_tests_parkapp = utils_parkapp.load_all_tests(dataset_id ='parkapp', context='supervised')
     all_tests_synergy = utils_parkapp.load_all_tests(dataset_id = 'synergy', context='supervised')
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp, all_tests_pisa_new]))
+    all_tests = utils_dataquality.observe_groundtruth(all_tests)
 
     if False:
         utils_dataquality.smoothing_investigation(all_tests_pisa)
@@ -37,18 +38,22 @@ if __name__ == "__main__":
         utils_labelling.labelling_acrossall(all_tests, method=method)
         utils_dataquality.observe_qualityvariable(all_tests)
 
-    if True:
+    if False:
         # Function to track comments for each test
         df_tests = utils_dataquality.observesingletests(all_tests, method='labelling', title='testssupervised_manualmsstartend_new.csv') # testssupervised_comments.csv'
-        utils_dataquality.investigate_tests_comments(all_tests, df_tests)
+        # utils_dataquality.investigate_tests_comments(all_tests, df_tests)
 
     if True:
-        utils_dataquality.compute_stats_tests(all_tests, plot=True)
+        utils_dataquality.quality_error(all_tests)
+
+    if True:
+        # Observing stats and tests results
+        df_tests = utils_dataquality.observesingletests(all_tests, method='labelling', title='testssupervised_manualmsstartend_new.csv')
+        utils_dataquality.compute_stats_tests(all_tests, df_tests=df_tests, plot=False)
 
         # Observe quality and stats
         utils_dataquality.quality_stats(all_tests)
 
-        utils_dataquality.quality_error(all_tests)
 
 
     if False:

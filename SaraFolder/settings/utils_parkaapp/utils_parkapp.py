@@ -281,7 +281,11 @@ def load_groundtruth_samplepersample(df_fusion):
 
 
 def load_groundtruth_dict():
-    times = pd.read_csv(base_path + os.sep + "manual_times.csv", index_col=0)
+    # times = pd.read_csv(base_path + os.sep + "manual_times.csv", index_col=0)
+    times = pd.read_csv(running_settings.results_all + os.sep + "testssupervised_manualmsstartend_new.csv", index_col=0)
+    times = times[['secStart', 'secEnd']]
+    # Rename to t_start and t_end
+    times = times.rename(columns={'secStart': 't_start', 'secEnd': 't_end'})
     skipped = list(pd.read_csv(base_path + os.sep + "skipped.csv", index_col=0).index)
     dict_times = times.transpose().to_dict()
     for key in skipped:
@@ -419,7 +423,7 @@ def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp', skip
             test = classes.TUGTest(test_id=i,
                                    user_id=k.split('_')[0] + '_' + dataset_id,
                                    session_id=k.split('_')[1],
-                                   dataset_id=dataset_id
+                                   dataset_id=dataset_id,
                                    )
 
         test.created_on = None
@@ -454,6 +458,9 @@ def return_context_tests(tests, context):
     elif context == 'all':
         all_tests = tests
 
+    for test in all_tests:
+        test.error = {}
+
     return all_tests
 
 
@@ -462,6 +469,7 @@ def process_tests_data(all_tests):
         test.processed_data = utils_pisatugloaders.process_data(test.raw_data)
         # # Remove nan rows
         test.processed_data = test.processed_data.dropna().reset_index(drop=True)
+        test.error = {}
     return all_tests
 
 
@@ -480,7 +488,6 @@ def load_all_tests(dataset_id, context='supervised'):
                 with open(running_settings.data_synpisa + os.sep + 'synergy_tests.pickle', 'rb') as handle:
                     tests = pickle.load(handle)
                 all_tests = [test for test in tests if str(test.user_id) + '_' +str(test.session_id) != '9_synergy_9']
-
             else:
                 tests = utils_pisatugloaders.load_synpisatests()
                 tests = [test for test in tests if test.dataset_id == 'synergy']
@@ -569,12 +576,16 @@ def merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new):
     all_users_old = [test.user_id.split('_')[0] for test in all_tests_pisa]
     for test in all_tests_pisa_new:
         user_id = test.user_id.split('_')[0]
+
         if test.raw_data is None:
             test.raw_data = pd.DataFrame()
             test.processed_data = pd.DataFrame()
         if user_id in all_users_old:
             # print(f"User {user_id} already in old Pisa tests.")
             test.session_id += 1
+            test.user_id = f"{user_id}_pisa"
+            test.dataset_id = 'pisa'
+        else:
             test.user_id = f"{user_id}_pisa"
             test.dataset_id = 'pisa'
 

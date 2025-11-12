@@ -1,5 +1,6 @@
 import os
 import time
+from typing import DefaultDict
 
 import matplotlib
 import numpy as np
@@ -68,7 +69,6 @@ def observesingletests(all_tests, method, title):
             error_tot_duration_gwalk = (test.results[method]['t_end'] - test.results[method]['t_start']) - gtg
             error_tot_duration_manual = (test.results[method]['t_end'] - test.results[method]['t_start']) - gtm
             print(f"Error with gwalk: {np.round(error_tot_duration_gwalk, 2)}, error with manual: {np.round(error_tot_duration_manual, 2)}")
-
         else:
             print(f"Result: {test.results[method]}")
             error_tot_duration_gwalk = test.results[method]
@@ -314,9 +314,9 @@ def dict_to_plot_stats(all_tests, stats_of_interest):
     return df_plot
 
 
-def compute_stats_tests(all_tests, plot=False):
+def compute_stats_tests(all_tests, df_tests, plot=False):
     for test in all_tests:
-        test.data_quality_investigation(plot=plot)
+        test.data_quality_investigation(plot=plot, df_tests=df_tests)
         if plot:
             # Add a break/pause in the code that I can unblock only by clicking 'Enter' in my keyboard
             input("Press Enter to continue to next plot...")
@@ -324,8 +324,11 @@ def compute_stats_tests(all_tests, plot=False):
 
 def compute_error_tests(all_tests, method):
     all_results, all_gts = utils_evaluation.define_res_gts(all_tests, gttype='gwalk', method=method)
+    indiv_errors, indiv_errors_duration = utils_evaluation.phases_eval(all_results, all_gts)
+
     all_errors = {}
-    for k in all_results.keys():
+    for i, k in enumerate(all_results.keys()):
+        print("Computing error for test: ", k)
         key = k[:-2]
         duration = all_results[k]['t_end'] - all_results[k]['t_start']
         if duration > 1000:
@@ -336,8 +339,10 @@ def compute_error_tests(all_tests, method):
         if gt>1000:
             gt=gt/1000
         all_errors[key] = duration - gt
+        all_tests[i].error[method] = duration - gt
 
-    return all_errors
+
+    return all_errors, indiv_errors_duration
 
 def compute_tests_stats(all_tests, stats_of_interest):
 
@@ -612,10 +617,11 @@ def quality_assessment(df, dataset_id):
     if isinstance(df, str):
         return df, quality
 
-    quality += check_signalvariability(df, cols=['acc.x', 'acc.y', 'acc.z'], threshold=0.8)
-    quality += check_signalvariability(df, cols=['sqrt(X²+Y²+Z²)'], threshold=0.8)
-    quality += check_signalvariability(df, cols=['alpha', 'beta', 'gamma'], threshold=0.5)
-    quality += check_signalvariability(df, cols=['rotRate.alpha', 'rotRate.beta', 'rotRate.gamma'], threshold=0.5)
+    if False:
+        quality += check_signalvariability(df, cols=['acc.x', 'acc.y', 'acc.z'], threshold=0.8)
+        quality += check_signalvariability(df, cols=['sqrt(X²+Y²+Z²)'], threshold=0.8)
+        quality += check_signalvariability(df, cols=['alpha', 'beta', 'gamma'], threshold=0.5)
+        quality += check_signalvariability(df, cols=['rotRate.alpha', 'rotRate.beta', 'rotRate.gamma'], threshold=0.5)
 
     # if 'Low signal variability' in quality:
     if False:
@@ -642,7 +648,7 @@ def get_quality_all(all_tests, method):
     quality_all = {}
     for test in all_tests:
         testid = test.user_id + '_' + str(test.session_id)
-        quality_all[testid] = test.quality['basic'] + test.quality[method]
+        quality_all[testid] = test.quality['basic'] + test.quality[method] + test.quality['visual']
     return quality_all
 
 def observe_qualityvariable(all_tests, method='labelling'):
@@ -864,38 +870,80 @@ def quality_stats(all_tests, method='labelling'):
 
     df = prepare_quality_stats_dataframe(quality_all, stats_all)
 
-
     key_stats = [s for s in df.columns if 'has' not in s and 'dataset' not in s and 'issue' not in s]
 
     fig1, df = plot_quality_stats_comparison(df, key_stats=key_stats)
     fig2, corr = plot_correlation_heatmap(df)
     results = statistical_comparison_by_issue(quality_all, stats_all)
-    fig3 = plot_specific_issue_comparison(quality_all, stats_all, 'has_low_signal_variability')
+    fig3 = plot_specific_issue_comparison(quality_all, stats_all, 'has_any_issue')
 
     return None
 
+
+def plot_tests_witherror(all_tests, error_threshold, method):
+    for test in all_tests:
+        if abs(test.error[method]) > error_threshold:
+            print(f"Error higher than {error_threshold}. Absolute error: {np.round(abs(test.error[method]),2)}")
+            test.plot_labelling(method=method, plot=True)
+        else:
+            print(f"This test has not error higher than {error_threshold}, error: {test.error[method]}, {test.user_id}_{test.session_id}")
+    pass
+
+
+def compare_error_all_indiv(error_all, indiv_error_duration):
+    diffs = {}
+    for k in error_all.keys():
+        print("k", k)
+        error_a = error_all[k]
+        session = k.split('_')[2]
+        k_i = k.split('_')[0] + '_' + k.split('_')[1]
+        error_i = indiv_error_duration[k_i]
+
+        if len(error_i)==1:
+            key_one = list(error_i.keys())[0]
+            # Comparing error_a and error_i
+            diffs[k] = error_a - error_i[key_one][0]['total_duration']
+        else:
+            for e_i in error_i.keys():
+                if session == e_i:
+                    diffs[k] = error_a - error_i[e_i][0]['total_duration']
+
+    pass
+
+
 def quality_error(all_tests):
     method = 'labelling'  # darioalgo or labelling
+
+    # Plot tests that have more than X seconds error
     utils_labelling.labelling_acrossall(all_tests, method=method)
-    error_all = compute_error_tests(all_tests, method='labelling')
+    error_all, indiv_error_duration = compute_error_tests(all_tests, method='labelling')
+    plot_tests_witherror(all_tests, error_threshold=10, method='labelling')
 
-    quality_all = get_quality_all(all_tests, method)
 
-    df = prepare_quality_error_dataframe1(quality_all, error_all)
+    utils_labelling.labelling_acrossall(all_tests, method='darioalgo')
+    error_all, indiv_error_duration = compute_error_tests(all_tests, method='darioalgo')
+    plot_tests_witherror(all_tests, error_threshold=20, method='darioalgo')
 
-    # Select key statistics for visualization
-    key_stats = ['entropy_acc',  'entropy_rotrate',
-                 'autocorr2sec_acc', 'autocorr2sec_alpha',
-                 'autocorr2sec_beta', 'entropy_alpha', 'entropy_beta',
-                 'autocorr5sec_alpha', 'autocorr5sec_beta','autocorr5sec_acc','autocorr1sec_acc', 'autocorr1sec_alpha', 'autocorr1sec_beta']
+    # compare_error_all_indiv(error_all, indiv_error_duration)
 
-    key_stats = [s for s in key_stats if s in df.columns]
+    if False:
+        quality_all = get_quality_all(all_tests, method)
 
-    fig1, df = plot_error_by_quality(df)
-    df_summary = error_summary_by_quality(df)
-    fig2 = plot_error_distribution(df)
-    corr_df = correlation_analysis(df)
-    problematic = identify_problematic_datasets(df, error_threshold=1.5)
+        df = prepare_quality_error_dataframe1(quality_all, error_all)
+
+        # Select key statistics for visualization
+        key_stats = ['entropy_acc',  'entropy_rotrate',
+                     'autocorr2sec_acc', 'autocorr2sec_alpha',
+                     'autocorr2sec_beta', 'entropy_alpha', 'entropy_beta',
+                     'autocorr5sec_alpha', 'autocorr5sec_beta','autocorr5sec_acc','autocorr1sec_acc', 'autocorr1sec_alpha', 'autocorr1sec_beta']
+
+        key_stats = [s for s in key_stats if s in df.columns]
+
+        fig1, df = plot_error_by_quality(df)
+        df_summary = error_summary_by_quality(df)
+        fig2 = plot_error_distribution(df)
+        corr_df = correlation_analysis(df)
+        problematic = identify_problematic_datasets(df, error_threshold=1.5)
 
     return None
 
@@ -924,7 +972,7 @@ def prepare_quality_stats_dataframe(quality_all, stats_all):
         # Parse quality string
         quality_str = quality_all[dataset_id]
         issues = [issue.strip() for issue in quality_str.split('/')
-                  if issue.strip() and issue.strip() != 'okresults']
+                  if issue.strip() and issue.strip() != 'okresults' and issue.strip() != 'ok']
 
         # Create record
         record = {'dataset_id': dataset_id}
@@ -934,6 +982,8 @@ def prepare_quality_stats_dataframe(quality_all, stats_all):
         record['has_no_turns'] = any('No turns found' in issue for issue in issues)
         record['has_peaks_issue'] = any('peaks' in issue.lower() for issue in issues)
         record['has_any_issue'] = len(issues) > 0
+        record['has_noisy'] = any('noisy' in issue.lower() or 'wavy' in issue.lower() for issue in issues)
+        record['has_toolong'] = any('long' in issue.lower() for issue in issues)
         record['num_issues'] = len(issues)
 
         # Add all statistics
@@ -1138,7 +1188,6 @@ def plot_specific_issue_comparison(quality_all, stats_all, issue_type='has_low_s
     axes = axes.flatten() if n_rows > 1 else [axes] if n_cols == 1 else axes
 
     issue_labels = {
-        'has_low_signal_variability': 'Low Signal Variability',
         'has_no_turns': 'No Turns Found',
         'has_peaks_issue': 'Peaks Issue',
         'has_any_issue': 'Any Issue'
@@ -1557,7 +1606,7 @@ def explore_data_smoothing(processed_data, plot=False, cutoff=1.5, order=8, btyp
 
 def smoothing_investigation(all_tests_pisa):
     for test in all_tests_pisa:
-        _, _ = explore_data_smoothing(test.processed_data)
+        _, _ = explore_data_smoothing(test.processed_data, plot=True)
     return all_tests_pisa
 
 
@@ -1617,4 +1666,27 @@ def plot_smoothing_frequency(alpha, alpha_filtered, beta, beta_filtered, magnitu
 def investigate_tests_comments(all_tests, df_tests):
     print(1)
     # What do I do here with this now
+    return None
+
+
+def observe_groundtruth(all_tests):
+    gt_gwalk = {}
+    gt_manual = {}
+    tests_gwalk = []
+
+    for test in all_tests:
+        index = test.user_id + '_' + str(test.session_id)
+        gt_gwalk[index] = test.gt_total_gwalk
+        gt_manual[index] = test.gt_total_manual
+
+        if np.isnan(gt_gwalk[index]) or gt_gwalk[index] is None:
+            print(f"Missing gwalk ground truth for test: {index}")
+        else:
+            tests_gwalk.append(test)
+
+    return tests_gwalk
+
+
+
+
     return None

@@ -1,6 +1,6 @@
 import numpy as np
 
-from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, running_settings
+from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, running_settings, utils_dataquality
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 from SaraFolder.settings.utils_synergy import utils_synloaders
 
@@ -14,6 +14,7 @@ if __name__ == "__main__":
     all_tests_parkapp = utils_parkapp.load_all_tests(dataset_id ='parkapp', context='supervised')
     all_tests_synergy = utils_parkapp.load_all_tests(dataset_id = 'synergy', context='supervised')
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp, all_tests_pisa_new]))
+    all_tests = utils_dataquality.observe_groundtruth(all_tests)
 
     # All tests overview:
     if False:
@@ -27,9 +28,7 @@ if __name__ == "__main__":
         blacklist = utils_labelling.observe_noresult_tests([test for test in all_tests if isinstance(test.results[method],str)], method='labelling')
 
         utils_evaluation.evaluate_results(all_tests, eval_type='duration',
-                                          method=method, gttype='gwalk',
-                                          dataset='all', title='all'+method+'_help', logging=True)
-
+                                          method=method, gttype='gwalk', dataset='all', title='all'+method+'_help', logging=True)
 
     # Parameter optimization
     if True:

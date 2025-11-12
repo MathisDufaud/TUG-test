@@ -313,7 +313,7 @@ def check_emptiness_3sec(df, dataset_id):
         quality = 'Empty df (1)/'
         return "empty df", quality
     # remove first 3 sec
-    if dataset_id == 'parkapp':
+    if dataset_id == 'parkapp': #or dataset_id == 'pisa_new':
         df = df.loc[(df['relative_timestamp'] >= 3)]
         if df.empty:
             quality = 'Empty df (2)/'
@@ -632,19 +632,17 @@ def darioalgo_method(test):
 
 def compute_method(test, method):
     print(f"Computing method: {method}, for {test.user_id}_{test.session_id}")
-    try:
-        quality_0 = utils_dataquality.quality_assessment(test.processed_data, test.dataset_id)
-        test.quality['basic'] = quality_0
+    quality_0 = utils_dataquality.quality_assessment(test.processed_data, test.dataset_id)
+    test.quality['basic'] = quality_0
 
-        if method == 'labelling':
-            test, quality_1 = labelling_method(test)
-            test.quality[method] = quality_1
+    if method == 'labelling':
+        test, quality_1 = labelling_method(test)
+        test.quality[method] = quality_1
 
-        if method == 'darioalgo':
-            test, quality_1 = darioalgo_method(test)
-            test.quality[method] = quality_1
-    except:
-        print(1)
+    if method == 'darioalgo':
+        test, quality_1 = darioalgo_method(test)
+        test.quality[method] = quality_1
+
     pass
 
 def compute_method_optimization(test, method):

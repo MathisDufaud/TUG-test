@@ -59,7 +59,9 @@ def phases_eval(all_results, gt_dict):
         else:
             gt = gt_dict[key]
             if gt is not None:
-                errors_duration = {'total_duration': (result['t_end'] - result['t_start']) - gt/1000}
+                if gt > 1000:
+                    gt = gt / 1000
+                errors_duration = {'total_duration': (result['t_end'] - result['t_start']) - gt}
                 indiv_errors_duration[indiv_id][test_iter].append(errors_duration)
 
     return indiv_errors, indiv_errors_duration
@@ -69,23 +71,26 @@ def define_res_gts(all_tests, gttype, method):
     all_results = {}
     all_gts = {}
     for test in all_tests:
-        if test.results is not None and test.results[method] is not None:
+        if test.results != None and test.results[method] != None and test.results[method] != '':
             all_results[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.results[method]
+        if gttype == 'gwalk':
+            all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_gwalk
+            if np.isnan(test.gt_total_gwalk) or test.gt_total_gwalk is None:
+                print("Missing gwalk GT, using manual GT instead")
+                # warnings.warn(f"Missing gwalk GT for test {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]}", UserWarning)
+                all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
+        else:
             if test.gt_phases.t_end is not None:
                 all_gts[
                     str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_phases.to_dict()
-            else:
-                # TODO Careful here, provide both analysis!!!
-                if gttype == 'gwalk':
-                    all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_gwalk
-                elif gttype == 'manual':
-                    all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
+            # else:
+            #     elif gttype == 'manual':
+            #         all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
 
     return all_results, all_gts
 
 
 def evaluate_results(all_tests, eval_type, method, dataset, gttype, title, logging):
-    # TODO: A lot of skipped tests, some of them maybe are not that wrong?
     title = dataset + '_' + title + '_' + gttype
     all_results, all_gts = define_res_gts(all_tests, gttype=gttype, method=method)
     indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
@@ -334,9 +339,10 @@ def plot_error_distributions(df, title, figpath, eval_type):
     stats_text += "Overall (All Data Points):\n"
     stats_text += f"  Mean: {overall_mean:.3f} s\n"
     stats_text += f"  Std Dev: {overall_std:.3f} s\n"
+    stats_text += f"  Median: {df['error'].median():.3f} s\n"
     stats_text += f"  LoA: [{overall_loa_lower:.3f}, {overall_loa_upper:.3f}] s\n\n"
 
-    stats_text += "-" * 40 + "\n\n"
+    stats_text += "-" * 30 + "\n\n"
 
     # Per dataset statistics
     for dataset in df['dataset'].unique():
@@ -350,6 +356,7 @@ def plot_error_distributions(df, title, figpath, eval_type):
         stats_text += f"{dataset} (n={n}):\n"
         stats_text += f"  Mean: {mean:.3f} s\n"
         stats_text += f"  Std Dev: {std:.3f} s\n"
+        stats_text += f"  Median: {dataset_data.median():.3f} s\n"
         stats_text += f"  LoA: [{loa_lower:.3f}, {loa_upper:.3f}] s\n\n"
 
     # Add text to the plot

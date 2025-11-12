@@ -259,12 +259,21 @@ class TUGTest:
                         fig, ax1 = plt.subplots(figsize=(10, 5))
                         ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
                                  label="Motion (m/s²)", color="blue", linestyle="-")
+                        ax3 = ax1.twinx()
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red",
+                                 linestyle="--")
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green",
+                                 linestyle="-.")
+                        ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple",
+                                 linestyle=":")
+                        ax3.legend(loc="lower right")
 
                         ax1.set_xlabel("Time (s)")
                         ax1.set_ylabel("Acceleration (m/s²)", color="blue")
                         ax1.tick_params(axis='y', labelcolor="blue")
 
-                        if self.dataset_id == 'parkapp':
+                        # if self.dataset_id == 'parkapp':
+                        if False:
                             ax1.axvspan(t_start, t_end, color="orange", alpha=0.3, label="Total duration")
                             ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
 
@@ -279,26 +288,25 @@ class TUGTest:
                             ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
                             ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
 
-                        if self.dataset_id == 'synergy' or self.dataset_id == 'pisa':
+                        # if self.dataset_id == 'synergy' or self.dataset_id == 'pisa':
+                        if True:
                             ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
                             ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4,
                                         label="First turn - estimation")
                             ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4,
                                         label="Second turn - estimation")
 
-                            ax3 = ax1.twinx()
-                            ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red",
-                                     linestyle="--")
-                            ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green",
-                                     linestyle="-.")
-                            ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple",
-                                     linestyle=":")
-                            ax3.legend(loc="lower right")
+                        if self.gt_total_manual is not None and not np.isnan(self.gt_total_manual):
+                            errormanual=np.round(self.gt_total_manual/1000 - (results.t_end-results.t_start), 2)
+                        else:
+                            errormanual = 'none'
+
+                        errorgt = np.round(self.gt_total_gwalk - (results.t_end - results.t_start), 2)
 
                         plt.title(f"TUG estimation, {method} approach, "
                                   f"{self.user_id}_{self.session_id}, "
-                                  f"{self.dataset_id}, "
-                                  f"GTmanual - Est = {np.round(self.gt_total_manual/1000 - (results.t_end-results.t_start), 2)}")
+                                  f"GTmanual - Est = {errormanual}, "
+                                  f"GTgwalk - Est = {errorgt}")
 
                         plt.xticks(rotation=45)
 
@@ -313,9 +321,12 @@ class TUGTest:
 
 
 
-    def data_quality_investigation(self, plot=False, method='labelling'):
+    def data_quality_investigation(self, plot=False, method='labelling', df_tests = None):
         print(f"Investigating data quality for {self.user_id}_{self.session_id}")
         self.plot_labelling(method=method, plot=False)
+        index = self.user_id + '_' + str(self.session_id)
+        if df_tests is not None:
+            self.quality['visual'] = df_tests.loc[index, 'comment']
         stats = utils_dataquality.compute_test_stats(self.processed_data)
 
         self.data_quality_stats = stats
