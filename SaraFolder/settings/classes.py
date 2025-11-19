@@ -235,7 +235,11 @@ class TUGTest:
             'data_processed': self.processed_data is not None
         }
 
-    def plot_labelling(self, method, plot=False, optimization=False):
+    def plot_labelling(self, method, plot=False, optimization=False, show_info=False):
+        if show_info:
+            if not isinstance(self.processed_data, str):
+                utils_labelling.compute_method(self, method, show_info=show_info)
+
         if not optimization:
             if not isinstance(self.processed_data, str):
                 utils_labelling.compute_method(self, method)
@@ -256,6 +260,20 @@ class TUGTest:
                             t_start_sit = self.gt_phases.t_start_sit
                             t_end = self.gt_phases.t_end
 
+                        totest = results.t_end - results.t_start
+                        if totest>1000: totest=totest/1000
+                        totgt = self.gt_total_gwalk
+                        if totgt>1000: totgt=totgt/1000
+                        totmanual = self.gt_total_manual
+                        if totmanual>1000: totmanual=totmanual/1000
+
+                        if self.gt_total_manual is not None and not np.isnan(self.gt_total_manual):
+                            errormanual=np.round(totest - totmanual, 2)
+                        else:
+                            errormanual = 'none'
+
+                        errorgt = np.round(totest - totgt, 2)
+
                         fig, ax1 = plt.subplots(figsize=(10, 5))
                         ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
                                  label="Motion (m/s²)", color="blue", linestyle="-")
@@ -272,7 +290,6 @@ class TUGTest:
                         ax1.set_ylabel("Acceleration (m/s²)", color="blue")
                         ax1.tick_params(axis='y', labelcolor="blue")
 
-                        # if self.dataset_id == 'parkapp':
                         if False:
                             ax1.axvspan(t_start, t_end, color="orange", alpha=0.3, label="Total duration")
                             ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
@@ -289,24 +306,26 @@ class TUGTest:
                             ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
 
                         # if self.dataset_id == 'synergy' or self.dataset_id == 'pisa':
-                        if True:
-                            ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
+                        ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2,
+                                    label="Total duration - estimation")
+
+                        if method != 'ml':
                             ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4,
                                         label="First turn - estimation")
                             ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4,
                                         label="Second turn - estimation")
+                            plt.title(f"TUG estimation, {method} approach, "
+                                      f"{self.user_id}_{self.session_id}, "
+                                      f"Est - GTmanual = {errormanual}, "
+                                      f"Est - GTwalk= {errorgt}")
 
-                        if self.gt_total_manual is not None and not np.isnan(self.gt_total_manual):
-                            errormanual=np.round(self.gt_total_manual/1000 - (results.t_end-results.t_start), 2)
                         else:
-                            errormanual = 'none'
-
-                        errorgt = np.round(self.gt_total_gwalk - (results.t_end - results.t_start), 2)
-
-                        plt.title(f"TUG estimation, {method} approach, "
-                                  f"{self.user_id}_{self.session_id}, "
-                                  f"GTmanual - Est = {errormanual}, "
-                                  f"GTgwalk - Est = {errorgt}")
+                            plt.title(f"TUG estimation, {method} approach, "
+                                      f"{self.user_id}_{self.session_id}, "
+                                      f"Est - GTmanual = {errormanual}, "
+                                      f"Est - GTwalk= {errorgt}, "
+                                      f"Est - GTml = {np.round(self.error['ml'],2)}"
+                                      )
 
                         plt.xticks(rotation=45)
 
@@ -315,9 +334,19 @@ class TUGTest:
 
                         plt.show()
                         plt.tight_layout()
+                else:
+                    print(f"No valid result for {self.user_id}_{self.session_id}")
+
         else:
             if not isinstance(self.processed_data, str):
                 utils_labelling.compute_method_optimization(self, method)
+
+    def show_tuttecose(self, method='labelling'):
+        self.plot_labelling(method=method, show_info=True)
+
+        self.plot_with_info(method=method)
+
+
 
 
 
@@ -332,9 +361,44 @@ class TUGTest:
         self.data_quality_stats = stats
 
         if plot:
-            utils_labelling.plot_faulty_signal(self.processed_data,
+            _ = utils_labelling.plot_faulty_signal(self.processed_data,
                                                f"Test:{self.user_id+'_'+ str(self.session_id)} Quality",
                                                quality=self.quality, stats=None)
+        pass
+
+    def plot_with_info(self, method):
+        fig = utils_labelling.plot_faulty_signal(self.processed_data, 'Test:' + self.user_id + '_' + str(self.session_id))
+
+        # Add subplot to already established figure with text description of self.quality[method] + self.quality[visual] + self.quality['basic']
+        quality_issues = []
+        for key in ['basic', method, 'visual']:
+            if key in self.quality and self.quality[key]:
+                issues = self.quality[key].split('/')
+                quality_issues.extend([q.strip() for q in issues if q.strip() and q.strip() != 'okresults'])
+
+        # Create info text
+        info_lines = []
+        info_lines.append(f"User ID: {self.user_id}")
+        info_lines.append(f"Session ID: {self.session_id}")
+        info_lines.append(f"GT Total GWalk: {np.round(self.gt_total_gwalk, 2)}")
+        info_lines.append(f"GT Total Manual: {np.round(self.gt_total_manual, 2)}")
+        info_lines.append("")
+
+        if quality_issues:
+            info_lines.append("Quality Issues:")
+            for issue in quality_issues:
+                info_lines.append(f"  • {issue}")
+        else:
+            info_lines.append("Quality: OK")
+
+        info_text = '\n'.join(info_lines)
+
+        # Add text box to the existing figure
+        ax = fig.axes[0]
+        props = dict(boxstyle='round', facecolor='lightyellow', alpha=0.9, edgecolor='black', linewidth=1.5)
+        ax.text(0.02, 0.98, info_text, transform=ax.transAxes,
+                fontsize=9, verticalalignment='top', horizontalalignment='left',
+                bbox=props, family='monospace')
         pass
 
 
@@ -349,10 +413,10 @@ class MlModel:
     def define_model(self, window_size=60, n_features=9, architecture='', save_model=False, output_steps=0):
         """
         Define model with multiple architecture options.
-
         Args:
             architecture: 'cnn_bilstm', 'transformer', 'tcn', or 'simple_lstm'
         """
+
         print("Selecting architecture: " + architecture)
         if architecture == 'cnn_bilstm':
             model = self._build_cnn_bilstm(window_size, n_features)
@@ -427,16 +491,18 @@ class MlModel:
 
         print(f"Training with X_train shaped: {X_train.shape}")
         print(f"Evaluation with X_val shaped: {X_val.shape}")
-
-        history = self.defined_model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
-            batch_size=batch_size,
-            epochs=epochs,
-            callbacks=callbacks,
-            class_weight=class_weights,
-            verbose=1
-        )
+        try:
+            history = self.defined_model.fit(
+                X_train, y_train,
+                validation_data=(X_val, y_val),
+                batch_size=batch_size,
+                epochs=epochs,
+                callbacks=callbacks,
+                class_weight=class_weights,
+                verbose=1
+            )
+        except:
+            print('bug')
 
         self.model_history = history
         self.fitted_model = self.defined_model
@@ -449,8 +515,8 @@ class MlModel:
     def save_model(self, title):
         self.fitted_model.save(running_settings.models_path + os.sep + title)
 
-    def load_model(self, title):
-        self.fitted_model = load_model(running_settings.models_path + os.sep + title)
+    def load_model(self):
+        self.fitted_model = load_model(running_settings.models_path + os.sep + self.model_name)
 
     def _build_cnn_bilstm(self, window_size, n_features):
         """Improved CNN-BiLSTM with batch normalization and regularization."""

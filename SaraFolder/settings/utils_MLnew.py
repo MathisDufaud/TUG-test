@@ -12,7 +12,8 @@ from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_sc
 from sklearn.preprocessing import StandardScaler
 
 matplotlib.use('TkAgg')
-from SaraFolder.settings import classes, utils_darioalgo, running_settings, utils_evaluation, utils_plots
+from SaraFolder.settings import classes, utils_darioalgo, running_settings, utils_evaluation, utils_plots, \
+    utils_dataquality
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 
 
@@ -236,7 +237,7 @@ def evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indices
 
     # Predict on holdout
     y_holdout_pred = best_model.fitted_model.predict(X_holdout, verbose=2)
-    y_holdout_pred_binary = (y_holdout_pred > 0.5).astype(int)
+    y_holdout_pred_binary = (y_holdout_pred > 0.6).astype(int)
 
     y_holdout_flat = y_holdout.reshape(-1)
     y_holdout_pred_flat = y_holdout_pred_binary.reshape(-1)
@@ -370,6 +371,7 @@ def reconstruct_from_windows(predictions, window_size, stride, original_length):
             reconstructed[start_idx:valid_end] += predictions[window_idx, :valid_window_size]
         else:
             reconstructed[start_idx:valid_end] += predictions[window_idx, :valid_window_size].flatten()
+            # Careful, here we are over-writing the part with stride overlap
 
         counts[start_idx:valid_end] += 1
 
@@ -506,8 +508,9 @@ def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_inde
         print(f"Reconstructed ground truth shape: {y_true_original.shape}")
 
         # Apply threshold for binary classification
-        y_pred_binary_reconstructed = (y_pred_reconstructed > 0.5).astype(int)
+        y_pred_binary_reconstructed = (y_pred_reconstructed > running_settings.parameters['classBinaryTresh']).astype(int)
         original_test.processed_data['predicted_testBool'] = y_pred_binary_reconstructed
+        original_test.processed_data['predicted_testProba'] = y_pred_reconstructed
 
         # Calculate metrics on original-sized data
         from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -598,7 +601,7 @@ def evaluate_cv_per_test(modelObj, X_val, y_val, val_test_index, val_tests, fold
             y_pred_reconstructed, overlap_counts = reconstruct_from_windows(
                 predictions=y_pred_test,
                 window_size=60,  # Your window size
-                stride=running_settings.parameters['stride'],  # Your stride
+                stride=running_settings.parameters['stride'],           # Your stride
                 original_length=len(original_test.processed_data)
             )
 
@@ -631,7 +634,8 @@ def evaluate_cv_per_test(modelObj, X_val, y_val, val_test_index, val_tests, fold
         print(f"Reconstructed ground truth shape: {y_true_original.shape}")
 
         # Apply threshold for binary classification
-        y_pred_binary_reconstructed = (y_pred_reconstructed > 0.5).astype(int)
+        y_pred_binary_reconstructed = (y_pred_reconstructed > running_settings.parameters['classBinaryTresh']).astype(int)
+        original_test.processed_data['predicted_testProba'] = y_pred_reconstructed
         original_test.processed_data['predicted_testBool'] = y_pred_binary_reconstructed
 
         # Calculate metrics on original-sized data
@@ -706,7 +710,7 @@ def evaluate_cv(modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_
     val_loss, val_acc, val_prec, val_recall = modelObj.fitted_model.evaluate(X_val, y_val, verbose=0)
 
     y_pred = modelObj.fitted_model.predict(X_val, verbose=0)
-    y_pred_binary = (y_pred > 0.5).astype(int)
+    y_pred_binary = (y_pred > running_settings.parameters['classBinaryTresh']).astype(int)
 
     y_val_flat = y_val.reshape(-1)
     y_pred_flat = y_pred_binary.reshape(-1)
@@ -739,25 +743,373 @@ def evaluate_cv(modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_
     return cv_results, fold_models, best_val_f1, best_fold_idx
 
 
-def evaluate_duration_tests(holdout_tests_original, method):
-    for test_id, test in holdout_tests_original.items():
-        print(f"\nEvaluating duration for Test ID: {test_id}")
-        gt = test.gt_total_gwalk
-        if not gt:
-            gt = test.gt_total_manual
-        try:
-            if test.processed_data.shape[0] > 0:
-                estimation = test.processed_data[test.processed_data['predicted_testBool'] == True]
-                msStart = estimation['msFromStart'].values[0]
-                msEnd = estimation['msFromStart'].values[-1]
+def plot_ml_prediction(test, error=None):
+    """
+    Plot binary classification predictions with ground truth markers and sensor data.
 
-                test.results[method] = {'t_start': msStart / 1000, 't_end': msEnd / 1000}
+    Parameters:
+    -----------
+    test : object
+        Test object containing processed_data with columns:
+        - msFromStart: timestamps
+        - predicted_testProba: prediction probabilities
+        - predicted_testBool: binary predictions
+        - testBool: ground truth labels
+        - sensor data: rotRate.alpha/beta/gamma, alpha/beta/gamma, sqrt(X²+Y²+Z²)
+    """
+    # Get the data
+    df = test.processed_data
+
+    # Get ground truth start and end
+    gt_indices = df[df['testBool'] == True]
+    if len(gt_indices) > 0:
+        gt_start = gt_indices['msFromStart'].values[0]
+        gt_end = gt_indices['msFromStart'].values[-1]
+        gtmltot = (gt_end - gt_start)/1000
+    else:
+        gt_start = None
+        gt_end = None
+
+    # Create figure with three subplots
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+
+    # Plot 1: Prediction Probabilities
+    ax1.plot(df['msFromStart'], df['predicted_testProba'],
+             label='Predicted Probability', color='blue', linewidth=2)
+    ax1.axhline(y=running_settings.parameters['classBinaryTresh'], color='gray', linestyle='--', linewidth=1, alpha=0.7, label=f"Threshold ({running_settings.parameters['classBinaryTresh']})")
+
+    # Add ground truth region
+    if gt_start is not None and gt_end is not None:
+        ax1.axvline(x=gt_start, color='green', linestyle='-', linewidth=2, label='GT Start')
+        ax1.axvline(x=gt_end, color='green', linestyle='-', linewidth=2, label='GT End')
+        ax1.axvspan(gt_start, gt_end, alpha=0.2, color='green', label='GT Region')
+
+    # Add estimation region
+    if 'ml' in test.results.keys():
+        ax1.axvline(x=test.results['ml']['t_start']*1000, color='red', linestyle='-', linewidth=2, label='Estimation Start')
+        ax1.axvline(x=test.results['ml']['t_end']*1000, color='red', linestyle='-', linewidth=2, label='Estimation End')
+        ax1.axvspan(test.results['ml']['t_start']*1000, test.results['ml']['t_end']*1000, alpha=0.2, color='red', label='Estimation Region')
+
+    ax1.set_ylabel('Prediction Probability', fontsize=12)
+    ax1.set_ylim(-0.05, 1.05)
+    ax1.legend(loc='upper right')
+    ax1.grid(True, alpha=0.3)
+    ax1.set_title(f'Classification Predictions, test: {test.user_id}_{test.session_id}, '
+                  f'error ml: {np.round(error, 2)}, gtgwalk: {np.round(test.gt_total_gwalk,2)}, '
+                  f'gtmanual: {np.round(test.gt_total_manual,2)}'
+                  f'gtml: {np.round(gtmltot,2)}', fontsize=14)
+
+    # Plot 2: Binary Predictions
+    ax2.plot(df['msFromStart'], df['predicted_testBool'],
+             label='Predicted Class', color='blue', linewidth=2, drawstyle='steps-post')
+
+    # Add ground truth region
+    if gt_start is not None and gt_end is not None:
+        ax2.axvline(x=gt_start, color='green', linestyle='-', linewidth=2, label='GT Start')
+        ax2.axvline(x=gt_end, color='green', linestyle='-', linewidth=2, label='GT End')
+        ax2.axvspan(gt_start, gt_end, alpha=0.2, color='green', label='GT Region')
+
+    if 'ml' in test.results.keys():
+        ax2.axvline(x=test.results['ml']['t_start']*1000, color='red', linestyle='-', linewidth=2, label='Estimation Start')
+        ax2.axvline(x=test.results['ml']['t_end']*1000, color='red', linestyle='-', linewidth=2, label='Estimation End')
+        ax2.axvspan(test.results['ml']['t_start']*1000, test.results['ml']['t_end']*1000, alpha=0.2, color='red', label='Estimation Region')
+
+    ax2.set_ylabel('Predicted Class', fontsize=12)
+    ax2.set_ylim(-0.1, 1.1)
+    ax2.set_yticks([0, 1])
+    ax2.set_yticklabels(['Negative (0)', 'Positive (1)'])
+    ax2.legend(loc='upper right')
+    ax2.grid(True, alpha=0.3)
+
+    # Plot 3: Sensor Data (Acceleration and Rotation)
+    # Primary y-axis for acceleration
+    ax3.plot(df['msFromStart'], df['sqrt(X²+Y²+Z²)'],
+             label='Motion (m/s²)', color='blue', linestyle='-', linewidth=2)
+    ax3.set_ylabel('Acceleration (m/s²)', color='blue', fontsize=12)
+    ax3.tick_params(axis='y', labelcolor='blue')
+
+    # Secondary y-axis for rotation data
+    ax3_right = ax3.twinx()
+
+    # Orientation angles
+    ax3_right.plot(df['msFromStart'], df['alpha'],
+                   label='Alpha (°)', color='red', linestyle='--', linewidth=2)
+    ax3_right.plot(df['msFromStart'], df['beta'],
+                   label='Beta (°)', color='green', linestyle='-.', linewidth=2)
+    ax3_right.plot(df['msFromStart'], df['gamma'],
+                   label='Gamma (°)', color='purple', linestyle=':', linewidth=2)
+
+    # Rotation rates
+    ax3_right.plot(df['msFromStart'], df['rotRate.alpha'],
+                   label='RotRate Alpha (°/s)', color='darkred', linestyle='--', alpha=0.7)
+    ax3_right.plot(df['msFromStart'], df['rotRate.beta'],
+                   label='RotRate Beta (°/s)', color='darkgreen', linestyle='-.', alpha=0.7)
+    ax3_right.plot(df['msFromStart'], df['rotRate.gamma'],
+                   label='RotRate Gamma (°/s)', color='indigo', linestyle=':', alpha=0.7)
+
+    ax3_right.set_ylabel('Rotation (°) / Rotation Rate (°/s)', fontsize=12)
+
+    # Add ground truth region
+    if gt_start is not None and gt_end is not None:
+        ax3.axvline(x=gt_start, color='green', linestyle='-', linewidth=2.5)
+        ax3.axvline(x=gt_end, color='green', linestyle='-', linewidth=2.5)
+        ax3.axvspan(gt_start, gt_end, alpha=0.2, color='green')
+
+    if 'ml' in test.results.keys():
+        ax3.axvline(x=test.results['ml']['t_start']*1000, color='red', linestyle='-', linewidth=2, label='Estimation Start')
+        ax3.axvline(x=test.results['ml']['t_end']*1000, color='red', linestyle='-', linewidth=2, label='Estimation End')
+        ax3.axvspan(test.results['ml']['t_start']*1000, test.results['ml']['t_end']*1000, alpha=0.2, color='red', label='Estimation Region')
+
+    ax3.set_xlabel('Time (ms from start)', fontsize=12)
+    ax3.grid(True, alpha=0.3)
+    ax3.legend(loc='upper left')
+    ax3_right.legend(loc='upper right')
+
+    plt.tight_layout()
+    plt.show()
+
+    return fig
+
+
+def iteratetimebtw(estimation, test, main_threshold_ms=15000, right_threshold_ms=5000, verbose=True):
+    """
+    Given a dataframe with 'msFromStart' and 'predicted_testBool' columns,
+    intelligently identify the main test block and discard isolated intervals.
+
+    Logic:
+    1. Find the center (halfway point) of the test
+    2. Select the closest True interval to the right of center as the MAIN block or the block that overlaps the center.
+    3. Keep intervals to the left of main block if gap >= 15000 ms
+    4. Keep intervals to the right of main block only if they start within 5000 ms of main block end
+
+    Args:
+        estimation: DataFrame with columns 'msFromStart' and 'predicted_testBool'
+        main_threshold_ms: Threshold for intervals to the left of main block (default: 15000)
+        right_threshold_ms: Threshold for intervals to the right of main block (default: 5000)
+        verbose: Print detailed information about filtering decisions
+
+    Returns:
+        DataFrame with isolated True intervals removed (set to 0)
+    """
+    if 'parkapp' == test.dataset_id:
+        print('parkapp')
+
+    if verbose:
+        fig = plot_ml_prediction(test, 0)
+
+    result = estimation.copy()
+
+    # Identify continuous True segments
+    result['group'] = (result['predicted_testBool'] != result['predicted_testBool'].shift()).cumsum()
+
+    # Get only True segments
+    true_segments = result[result['predicted_testBool'] == 1].groupby('group').agg({
+        'msFromStart': ['first', 'last', 'count']
+    }).reset_index()
+
+    if len(true_segments) == 0:
+        if verbose:
+            print("No True intervals found.")
+        return result[['msFromStart', 'predicted_testBool']]
+
+    true_segments.columns = ['group', 'start_time', 'end_time', 'count']
+
+    # Segments that are shorter than 500ms are ignored and discarded
+    true_segments = true_segments[(true_segments['end_time'] - true_segments['start_time']) >= 100].copy()
+
+    # Find the center (halfway point) of the entire test
+    test_start = result['msFromStart'].min()
+    test_end = result['msFromStart'].max()
+    test_center = (test_start + test_end) / 2
+
+    if verbose:
+        print(f"\nTest duration: {test_start:.0f} - {test_end:.0f} ms")
+        print(f"Test center: {test_center:.0f} ms")
+        print(f"\nFound {len(true_segments)} True interval(s):")
+
+    # Check if any interval overlaps the center
+    overlapping_intervals = true_segments[
+        (true_segments['start_time'] <= test_center) &
+        (true_segments['end_time'] >= test_center)
+    ].copy()
+
+    if len(overlapping_intervals) > 0:
+        # If there's an interval overlapping the center, select it as main block
+        main_idx = overlapping_intervals.index[0]
+        selection_method = "OVERLAPS CENTER"
+    else:
+        # Otherwise, find intervals to the right of center
+        right_intervals = true_segments[true_segments['start_time'] >= test_center].copy()
+
+        if len(right_intervals) == 0:
+            if verbose:
+                print("\nNo intervals found to the right of center!")
+                print("Selecting the rightmost interval as main block...")
+            # If no intervals to the right, select the last (rightmost) interval
+            main_idx = true_segments['start_time'].idxmax()
+            selection_method = "RIGHTMOST (fallback)"
+        else:
+            # Select the closest interval to the right of center (minimum start_time)
+            main_idx = right_intervals['start_time'].idxmin()
+            selection_method = "CLOSEST TO RIGHT OF CENTER"
+
+    main_block = true_segments.loc[main_idx]
+    main_group = main_block['group']
+
+    if verbose:
+        print(f"\n{'=' * 80}")
+        print(f"MAIN BLOCK identified: Group {main_group} ({selection_method})")
+        print(f"  Time: {main_block['start_time']:.0f} - {main_block['end_time']:.0f} ms")
+        print(f"  Duration: {main_block['end_time'] - main_block['start_time']:.0f} ms")
+        if selection_method == "OVERLAPS CENTER":
+            print(f"  ✓ This interval contains the test center ({test_center:.0f} ms)")
+        print(f"{'=' * 80}\n")
+
+    # Evaluate each interval
+    true_segments['keep'] = False
+    true_segments['reason'] = ''
+
+    for idx, row in true_segments.iterrows():
+        if row['group'] == main_group:
+            # Always keep the main block
+            true_segments.loc[idx, 'keep'] = True
+            true_segments.loc[idx, 'reason'] = 'MAIN BLOCK'
+        elif row['end_time'] < main_block['start_time']:
+            # Interval to the LEFT of main block
+            gap_to_main = main_block['start_time'] - row['end_time']
+            if gap_to_main >= main_threshold_ms:
+                true_segments.loc[idx, 'keep'] = False
+                true_segments.loc[idx, 'reason'] = f'LEFT: gap to main = {gap_to_main:.0f} ms >= {main_threshold_ms} ms (DISCARD)'
             else:
-                test.results[method] = None
-        except:
-            print(1)
+                true_segments.loc[idx, 'keep'] = True
+                true_segments.loc[
+                    idx, 'reason'] = f'LEFT: gap to main = {gap_to_main:.0f} ms < {main_threshold_ms} ms'
+        else:
+            # Interval to the RIGHT of main block
+            gap_from_main = row['start_time'] - main_block['end_time']
+            if gap_from_main <= right_threshold_ms:
+                true_segments.loc[idx, 'keep'] = True
+                true_segments.loc[
+                    idx, 'reason'] = f'RIGHT: gap from main = {gap_from_main:.0f} ms <= {right_threshold_ms} ms'
+            else:
+                true_segments.loc[idx, 'keep'] = False
+                true_segments.loc[
+                    idx, 'reason'] = f'RIGHT: gap from main = {gap_from_main:.0f} ms > {right_threshold_ms} ms (DISCARD)'
 
-    return holdout_tests_original
+    if verbose:
+        print("Interval Analysis:")
+        print("-" * 80)
+        for idx, row in true_segments.iterrows():
+            status = "✓ KEEP" if row['keep'] else "✗ DISCARD"
+            print(f"{status} - Interval at {row['start_time']:.0f} - {row['end_time']:.0f} ms")
+            print(f"       {row['reason']}")
+        print("-" * 80)
+
+    # Keep only groups that are to keep
+    groups_to_keep = true_segments[true_segments['keep']]['group'].values
+    result['predicted_testBool'] = result['group'].isin(groups_to_keep).astype(int)
+
+    # Return cleaned result
+    final_result = result[['msFromStart', 'predicted_testBool']].copy()
+
+    # Extract t_start and t_end from final result
+    true_values = final_result[final_result['predicted_testBool'] == 1]
+
+    if len(true_values) > 0:
+        t_start = true_values['msFromStart'].iloc[0]
+        t_end = true_values['msFromStart'].iloc[-1]
+    else:
+        t_start = None
+        t_end = None
+
+    if verbose:
+        print(f"\nSummary:")
+        print(f"  Original True predictions: {estimation['predicted_testBool'].sum()}")
+        print(f"  Filtered True predictions: {final_result['predicted_testBool'].sum()}")
+        print(f"  Intervals kept: {true_segments['keep'].sum()}/{len(true_segments)}")
+
+        if t_start is not None and t_end is not None:
+            ax1 = fig.axes[0]
+            ax2 = fig.axes[1]
+            ax3 = fig.axes[2]
+            ax1.axvline(x=t_start, color='red', linestyle='--', linewidth=2, label='Estimated Start')
+            ax1.axvline(x=t_end, color='red', linestyle='--', linewidth=2, label='Estimated End')
+            ax2.axvline(x=t_start, color='red', linestyle='--', linewidth=2, label='Estimated Start')
+            ax2.axvline(x=t_end, color='red', linestyle='--', linewidth=2, label='Estimated End')
+            ax3.axvline(x=t_start, color='red', linestyle='--', linewidth=2, label='Estimated Start')
+            ax3.axvline(x=t_end, color='red', linestyle='--', linewidth=2, label='Estimated End')
+            ax1.legend(loc='upper right')
+            ax2.legend(loc='upper right')
+            ax3.legend(loc='upper left')
+            plt.show()
+        else:
+            print("No True predictions remain after filtering.")
+
+
+    return t_start, t_end
+
+
+def basic_approach(processed_data):
+    estimation = processed_data[processed_data['predicted_testBool'] == True]
+    msStart = estimation['msFromStart'].values[0]
+    msEnd = estimation['msFromStart'].values[-1]
+    return msStart, msEnd
+
+
+def compute_error(msStart, msEnd, test):
+    gt_indices = test.processed_data[test.processed_data['testBool'] == True]
+    if len(gt_indices) > 0:
+        gt_start = gt_indices['msFromStart'].values[0]
+        gt_end = gt_indices['msFromStart'].values[-1]
+    error = (msEnd - msStart) - (gt_end / 1000 - gt_start / 1000)
+    return error
+
+
+def approach_duration_estimation(test, method=''):
+    processed_data = test.processed_data
+    print("Using basic approach for duration estimation")
+    msStart, msEnd = basic_approach(processed_data)
+    error = compute_error(msStart, msEnd, test)
+
+    if abs(error) > 30:
+        # plot_ml_prediction(test, error)
+        verbose=False
+    else:
+        verbose=False
+
+    if method == 'timebtwbool':
+        print("Using time between peaks for duration estimation")
+        estimation = processed_data[['msFromStart', 'predicted_testBool']]
+
+        msStart, msEnd = iteratetimebtw(estimation, test, main_threshold_ms=10000, right_threshold_ms=5000, verbose=verbose)
+
+
+    return msStart/1000, msEnd/1000
+
+
+def evaluate_duration_tests(tests_original, method):
+    for test_id, test in tests_original.items():
+        print(f"\nEvaluating duration for Test ID: {test_id}")
+
+        if test.processed_data.shape[0] > 0:
+            msStart, msEnd = approach_duration_estimation(test, method='timebtwbool')
+
+            test.results[method] = {'t_start': msStart, 't_end': msEnd}
+            test.error[method] = compute_error(msStart, msEnd, test)
+
+            gt_indices = test.processed_data[test.processed_data['testBool'] == True]
+            if len(gt_indices) > 0:
+                gt_start = gt_indices['msFromStart'].values[0]
+                gt_end = gt_indices['msFromStart'].values[-1]
+            error = (test.results[method]['t_end'] - test.results[method]['t_start']) - (gt_end/1000 - gt_start/1000)
+            if abs(error) > 20:
+                print("Error > 20")
+                plot_ml_prediction(test, error)
+        else:
+            test.results[method] = None
+
+
+    return tests_original
 
 
 def observe_performance_per_test(original_tests_fold, holdout_tests_original, method, modelname):
@@ -775,6 +1127,7 @@ def observe_performance_per_test(original_tests_fold, holdout_tests_original, me
         val_tests_original = evaluate_duration_tests(val_tests_original, method)
         all_folds_tests.extend(list(val_tests_original.values()))
 
+    all_fold_remained = utils_dataquality.plot_tests_witherror(all_folds_tests, error_threshold=15, method='ml')
     utils_evaluation.evaluate_results(all_folds_tests, eval_type='duration',
                                       method=method, gttype='gwalk',
                                       dataset='cvfolds', title=modelname + '_' + method, logging=True)
@@ -869,9 +1222,6 @@ def kfold_validation(all_tests, n_splits):
     return split_loop, holdout_tests_original, holdout_tests
 
 def kfold_validation_equalsplit(all_tests, n_splits):
-    # kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    n_tests = len(all_tests)
-    # test_indices = np.arange(n_tests)
     n_splits=5
 
     # Group tests by dataset_id
@@ -893,7 +1243,6 @@ def kfold_validation_equalsplit(all_tests, n_splits):
 
     # Create stratified splits
     folds = [[] for _ in range(n_splits)]
-
     for dataset_id, indices in train_val_groups.items():
         indices = np.array(indices)
         np.random.seed(42)
@@ -930,7 +1279,6 @@ def kfold_validation_equalsplit(all_tests, n_splits):
             print(f"Current Split: Fold {val_fold_num + 1} as Validation")
             print(f"{'=' * 60}")
 
-            # Show dataset distribution for this split
             train_tests = [all_tests[i] for i in train_indices]
             val_tests = [all_tests[i] for i in val_indices]
 
@@ -1007,13 +1355,11 @@ def verify_stratification(all_tests, split_loop, n_splits=5):
 
 
 def apply_data_augmentation(X_train, y_train, X_val, y_val):
-
-
     return X_train, y_train, X_val, y_val
 
 
 def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
-                n_splits=5, architecture='', training_epochs=5, save_model=False, input_type='triaxial', method='', output_steps=0):
+                n_splits=5, architecture='', training_epochs=5, save_model=False, input_type='triaxial', method='ml', output_steps=0, load_existing = False):
     """
     Train ML model with optional cross-validation.
 
@@ -1027,12 +1373,11 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
         Trained model object (or list of models if using CV)
     """
 
-    load_existing = running_settings.load_existing_model
     modelcomments = running_settings.model_comments
 
     X, y, test_index = prep_data(all_tests, stride=running_settings.parameters['stride'], input_type=input_type, output_steps=output_steps)
 
-    if use_cv and not load_existing:
+    if use_cv:
         if isinstance(n_splits, int):
             split_loop, holdout_tests_original, holdout_tests = kfold_validation(all_tests, n_splits=n_splits)
 
@@ -1053,36 +1398,36 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
         best_val_f1 = 0
 
         for fold, (train_fold_idx, val_fold_idx) in enumerate(split_loop):
-            print(f"\n{'=' * 60}")
-            print(f"Training Fold {fold + 1}/{n_splits}")
-            print(f"{'=' * 60}")
-
             val_tests = val_fold_idx
             val_tests_original = {i: test for i, test in enumerate(all_tests) if i in val_tests}
 
             X_train = X[np.isin(test_index, train_fold_idx)]
             y_train = y[np.isin(test_index, train_fold_idx)]
 
-            try:
-                scaler = StandardScaler()
-                X_train_flat = X_train.reshape(-1, X_train.shape[-1])
-                X_train_scaled = scaler.fit_transform(X_train_flat)
-                X_train = X_train_scaled.reshape(X_train.shape)
-                scalers.append(scaler)
+            scaler = StandardScaler()
+            X_train_flat = X_train.reshape(-1, X_train.shape[-1])
+            X_train_scaled = scaler.fit_transform(X_train_flat)
+            X_train = X_train_scaled.reshape(X_train.shape)
+            scalers.append(scaler)
 
-                X_val = X[np.isin(test_index, val_fold_idx)]
-                y_val = y[np.isin(test_index, val_fold_idx)]
+            X_val = X[np.isin(test_index, val_fold_idx)]
+            y_val = y[np.isin(test_index, val_fold_idx)]
 
-                if X_val.shape[0]>0:
-                    X_val_flat = X_val.reshape(-1, X_val.shape[-1])
-                    X_val_scaled = scaler.transform(X_val_flat)
-                    X_val = X_val_scaled.reshape(X_val.shape)
+            if X_val.shape[0]>0:
+                X_val_flat = X_val.reshape(-1, X_val.shape[-1])
+                X_val_scaled = scaler.transform(X_val_flat)
+                X_val = X_val_scaled.reshape(X_val.shape)
 
-                    val_test_index = test_index[np.isin(test_index, val_fold_idx)]
+                val_test_index = test_index[np.isin(test_index, val_fold_idx)]
 
-                    X_train, y_train, X_val, y_val = apply_data_augmentation(X_train, y_train, X_val, y_val)
+                X_train, y_train, X_val, y_val = apply_data_augmentation(X_train, y_train, X_val, y_val)
 
-                    # Define and train model
+                # Define and train model
+                if not load_existing:
+                    print(f"\n{'=' * 60}")
+                    print(f"Training Fold {fold + 1}/{n_splits}")
+                    print(f"{'=' * 60}")
+
                     fold_model_name = f"{model_name.replace('.h5', '')}_fold{fold + 1}.h5"
                     modelObj = classes.MlModel(model_name=fold_model_name)
                     modelObj.define_model(save_model=save_model, n_features=X.shape[2], architecture=architecture, output_steps=output_steps)
@@ -1091,29 +1436,35 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
                         plot=False,
                         epochs=training_epochs,
                         information=f"{modelcomments} - Fold {fold + 1}",
-                        save_model=False
-                    )
-
-                    # Sample-level evaluation
-                    cv_results, fold_models, best_val_f1, best_fold_idx = evaluate_cv(
-                        modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_f1, best_fold_idx
-                    )
-
-                    # Test-level evaluation
-                    test_results_df, test_level_metrics, val_tests_original = evaluate_cv_per_test(
-                        modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=output_steps
-                    )
-                    original_tests_fold[fold] = val_tests_original
-
-                    cv_results_per_test_all.append(test_results_df)
-                    cv_test_level_metrics.append(test_level_metrics)
+                        save_model=save_model)
                 else:
-                    print("No data in this batch")
-                    continue
-            except:
-                print("bug here")
+                    print(f"\n{'=' * 60}")
+                    print(f"Loading model at {fold + 1}/{n_splits}")
+                    print(f"{'=' * 60}")
 
-        utils_plots.plot_all_training_history(fold_models, title=model_name.strip('.h5') + '_allfoldsresults.jpg')
+                    fold_model_name = f"{model_name.replace('.h5', '')}_fold{fold + 1}.h5"
+                    modelObj = classes.MlModel(model_name=fold_model_name)
+                    modelObj.load_model()
+
+                # Sample-level evaluation
+                cv_results, fold_models, best_val_f1, best_fold_idx = evaluate_cv(
+                    modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_f1, best_fold_idx
+                )
+
+                # Test-level evaluation
+                test_results_df, test_level_metrics, val_tests_original = evaluate_cv_per_test(
+                    modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=output_steps
+                )
+                original_tests_fold[fold] = val_tests_original
+
+                cv_results_per_test_all.append(test_results_df)
+                cv_test_level_metrics.append(test_level_metrics)
+            else:
+                print("No data in this batch")
+                continue
+
+        if not load_existing:
+            utils_plots.plot_all_training_history(fold_models, title=model_name.strip('.h5') + '_allfoldsresults.jpg')
 
         # Print CV summary - Sample Level
         print(f"\n{'=' * 60}")
@@ -1144,13 +1495,13 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
             all_test_results = pd.concat(cv_results_per_test_all, ignore_index=True)
             all_test_results.to_csv(running_settings.results_all + os.sep + 'cv_per_test_detailed.csv', index=False)
 
-        # Evaluate on holdout set
-        best_model = fold_models[best_fold_idx]
-        best_scaler = scalers[best_fold_idx]
-
-        test_indeces = np.arange(len(all_tests))
-
         if len(holdout_tests)>0:
+            # Evaluate on holdout set
+            best_model = fold_models[best_fold_idx]
+            best_scaler = scalers[best_fold_idx]
+
+            test_indeces = np.arange(len(all_tests))
+
             # Evaluate on holdout set
             fold_models, holdout_results = evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indeces,
                                                             test_index, holdout_tests, save=False)
@@ -1163,7 +1514,8 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
                                                                                                           best_fold_idx,
                                                                                                           holdout_tests_original)
 
-        observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method.strip('.h5'), modelname=model_name.strip('.h5'))
+        observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method, modelname=model_name.strip('.h5'))
+
         return best_model
 
     else:

@@ -585,10 +585,11 @@ def process_data(df_raw):
             df_final = df_final.rename(columns={'rotA':'rotRate.alpha', 'rotB':'rotRate.beta', 'rotG':'rotRate.gamma'})
             df_final = df_final.rename(columns={'accX':'acc.x', 'accY':'acc.y', 'accZ':'acc.z'})
 
+        df_final = smoothalphabeta(df_final, plot=False)
+
         if 'all' not in df_final:
             df_final = utils_parkapp.new_columns(df_final)
 
-        df_final = smoothalphabeta(df_final, plot=False)
 
         return df_final
     else:

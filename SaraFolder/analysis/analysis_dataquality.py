@@ -15,17 +15,13 @@ plt.ion()
 if __name__ == "__main__":
     import matplotlib
     matplotlib.use('TkAgg')
+    all_tests = utils_parkapp.load_everything()
 
     if False:
         all_parkapp_skipped = utils_parkapp.load_all_tests_skipped(dataset_id ='parkapp', context='supervised')
 
-    all_tests_pisa_new = utils_parkapp.load_all_tests(dataset_id = 'pisa_new', context='supervised')
-    all_tests_pisa = utils_parkapp.load_all_tests(dataset_id = 'pisa', context='supervised')
-    all_tests_pisa_new = utils_parkapp.merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new)
-    all_tests_parkapp = utils_parkapp.load_all_tests(dataset_id ='parkapp', context='supervised')
-    all_tests_synergy = utils_parkapp.load_all_tests(dataset_id = 'synergy', context='supervised')
-    all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp, all_tests_pisa_new]))
-    all_tests = utils_dataquality.observe_groundtruth(all_tests)
+    if False:
+        all_tests = utils_dataquality.observe_groundtruth(all_tests)
 
     if False:
         utils_dataquality.smoothing_investigation(all_tests_pisa)

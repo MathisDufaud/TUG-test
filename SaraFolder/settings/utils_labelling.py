@@ -55,7 +55,7 @@ def find_zero_phase_end_reverse(data, min_duration=30):
     return end_index
 
 # find the 2 turns
-def start_change(base_data, window_size=100, threshold=120):
+def start_change(base_data, window_size=100, threshold=120, show_info=False):
     data = np.array(base_data)
     detected_segments = []
     # Window size starts at 100 (approx 1.7 seconds at 60Hz)
@@ -65,6 +65,9 @@ def start_change(base_data, window_size=100, threshold=120):
         amplitude = np.max(window) - np.min(window)
 
         if amplitude >= threshold:
+            if show_info:
+                print(f"Detected window at index {i} with amplitude {amplitude}, higher than threshold {threshold}")
+
             center = i + window_size // 2
 
             # going left from center
@@ -77,14 +80,19 @@ def start_change(base_data, window_size=100, threshold=120):
             while end + 1 < len(data) - 1 and np.abs(data[end] - data[end + 1]) > 0.3:
                 end += 1
 
-            if end - start >= 50:
+            if end - start >= 45:
                 detected_segments.append((start, end))
+                if show_info:
+                    print(f"Segment with turn potential lasts long: {end - start} samples, higher than 45 samples")
 
             i = end
         i += 1
 
     if len(detected_segments) >= 2:
         # sorting by amplitude+length
+        if show_info:
+            print(f"Found more than two samples: {len(detected_segments)}, selecting the best two based on amplitude and length.")
+
         def sort_key(seg):
             start, end = seg
             seg_data = data[start:end+1]
@@ -100,6 +108,11 @@ def start_change(base_data, window_size=100, threshold=120):
 
     if threshold == 80:
         return None
+
+    if show_info:
+        print(f"Turns not found yet, "
+              f"lowering threshold to {threshold-10} and "
+              f"increasing window size to {window_size+10}")
 
     return start_change(base_data, window_size=window_size+10, threshold=threshold-10)
 
@@ -306,6 +319,8 @@ def plot_faulty_signal(df_plot, name, quality=None, stats=None, method='labellin
     plt.tight_layout()
     plt.show()
 
+    return fig
+
 
 def check_emptiness_3sec(df, dataset_id):
 
@@ -322,7 +337,168 @@ def check_emptiness_3sec(df, dataset_id):
     return df, ''
 
 
-def full_algo(df, dataset_id, name):
+def compute_timestamp_quality(timestamps, weights=None):
+    """
+    Compute quality metrics for timestamp estimates.
+
+    Parameters:
+    -----------
+    timestamps : array-like
+        List of timestamp estimates to average
+    weights : array-like, optional
+        Weights for each timestamp (e.g., based on signal quality)
+
+    Returns:
+    --------
+    dict with quality metrics
+    """
+    timestamps = np.array(timestamps)
+
+    # Remove NaN values
+    valid_timestamps = timestamps[~np.isnan(timestamps)]
+
+    if len(valid_timestamps) == 0:
+        return {
+            'mean': np.nan,
+            'std': np.nan,
+            'confidence': 0.0,
+            'agreement': 0.0,
+            'quality_score': 0.0,
+            'n_valid': 0
+        }
+
+    if len(valid_timestamps) == 1:
+        return {
+            'mean': valid_timestamps[0],
+            'std': 0.0,
+            'confidence': 0.5,  # Medium confidence with single estimate
+            'agreement': 1.0,
+            'quality_score': 0.5,
+            'n_valid': 1
+        }
+
+    # Basic statistics
+    mean_time = np.mean(valid_timestamps)
+    std_time = np.std(valid_timestamps)
+
+    # 1. Coefficient of Variation (CV) - normalized dispersion
+    cv = std_time / mean_time if mean_time != 0 else np.inf
+
+    # 2. Agreement score - how close timestamps are to each other
+    # Lower std relative to time scale = better agreement
+    max_deviation = np.max(np.abs(valid_timestamps - mean_time))
+    agreement_score = 1.0 / (1.0 + max_deviation / 100)  # Normalize by 100ms
+
+    # 3. Confidence based on standard deviation
+    # High confidence if std < 50ms, low if std > 200ms
+    confidence = np.exp(-std_time / 100)  # Exponential decay
+
+    # 4. Overall quality score (0-1 scale)
+    quality_score = (agreement_score * 0.4 +
+                     confidence * 0.4 +
+                     (len(valid_timestamps) / len(timestamps)) * 0.2)
+
+    return {
+        'mean': mean_time,
+        'std': std_time,
+        'cv': cv,
+        'max_deviation': max_deviation,
+        'confidence': confidence,
+        'agreement': agreement_score,
+        'quality_score': quality_score,
+        'n_valid': len(valid_timestamps),
+        'n_total': len(timestamps)
+    }
+
+def compute_all_timestamp_qualities(t_start_beta_gamma, t_new_start_der, t_new_start_all, t_start_rot,
+                                    t_end_beta_gamma, t_new_end_der, t_new_end_all, t_end_rot,
+                                    t_end_stand_beta_gamma, t_end_stand_rot,
+                                    t_start_sit_beta_gamma, t_start_sit_rot):
+    """
+    Compute quality metrics for all timestamp estimates.
+    """
+
+    # Start time
+    t_start_inputs = [t_start_beta_gamma - 0.2, t_new_start_der, t_new_start_all, t_start_rot - 0.2]
+    t_start_quality = compute_timestamp_quality(t_start_inputs)
+    t_start = t_start_quality['mean']
+
+    # End time
+    t_end_inputs = [t_end_beta_gamma + 0.2, t_new_end_der, t_new_end_all, t_end_rot + 0.2]
+    t_end_quality = compute_timestamp_quality(t_end_inputs)
+    t_end = t_end_quality['mean']
+
+    # End stand time
+    t_end_stand_inputs = [t_end_stand_beta_gamma, t_end_stand_rot]
+    t_end_stand_quality = compute_timestamp_quality([x + 0.2 for x in t_end_stand_inputs])
+    t_end_stand = t_end_stand_quality['mean']
+
+    # Start sit time
+    t_start_sit_inputs = [t_start_sit_beta_gamma, t_start_sit_rot]
+    t_start_sit_quality = compute_timestamp_quality([x - 0.2 for x in t_start_sit_inputs])
+    t_start_sit = t_start_sit_quality['mean']
+
+    results = {
+        't_start': {
+            'value': t_start,
+            'quality': t_start_quality,
+            'inputs': t_start_inputs
+        },
+        't_end': {
+            'value': t_end,
+            'quality': t_end_quality,
+            'inputs': t_end_inputs
+        },
+        't_end_stand': {
+            'value': t_end_stand,
+            'quality': t_end_stand_quality,
+            'inputs': [x + 0.2 for x in t_end_stand_inputs]
+        },
+        't_start_sit': {
+            'value': t_start_sit,
+            'quality': t_start_sit_quality,
+            'inputs': [x - 0.2 for x in t_start_sit_inputs]
+        }
+    }
+
+    return results
+
+def print_quality_report(results):
+    """
+    Print a formatted quality report for timestamp estimates.
+    """
+    print("=" * 70)
+    print("TIMESTAMP QUALITY REPORT")
+    print("=" * 70)
+
+    for name, data in results.items():
+        q = data['quality']
+        print(f"\n{name.upper()}:")
+        print(f"  Estimated value: {data['value']:.2f} ms")
+        print(f"  Standard deviation: {q['std']:.2f} ms")
+        print(f"  Max deviation: {q['max_deviation']:.2f} ms")
+        print(f"  Confidence: {q['confidence']:.3f} (0-1 scale)")
+        print(f"  Agreement: {q['agreement']:.3f} (0-1 scale)")
+        print(f"  Quality score: {q['quality_score']:.3f} (0-1 scale)")
+        print(f"  Valid estimates: {q['n_valid']}/{q['n_total']}")
+
+        # Quality assessment
+        if q['quality_score'] > 0.8:
+            assessment = "EXCELLENT"
+        elif q['quality_score'] > 0.6:
+            assessment = "GOOD"
+        elif q['quality_score'] > 0.4:
+            assessment = "FAIR"
+        else:
+            assessment = "POOR"
+        print(f"  Assessment: {assessment}")
+
+        # Show individual inputs
+        print(f"  Input values: {[f'{x:.2f}' for x in data['inputs']]}")
+
+    print("\n" + "=" * 70)
+
+def full_algo(df, dataset_id, name, show_info=False):
 
     df, quality = check_emptiness_3sec(df, dataset_id)
 
@@ -330,17 +506,16 @@ def full_algo(df, dataset_id, name):
         return df, quality
 
     df.reset_index(drop=True, inplace=True)
-    # print("FS: ", np.round(df.shape[0] / ((df.iloc[-1, 0] - df.iloc[0, 0]) / 1000), 2))
 
     # find the 2 turns. 20 samples correspond approx to 1/3 seconds
     alpha_ma = utils_parkapp.moving_average(df['alpha'], 20)
     try:
-        result = start_change(alpha_ma)
+        result = start_change(alpha_ma, show_info=show_info)
 
         if result is None:
             quality = 'No turns found with classic approach/'
             if False:
-                plot_faulty_signal(df, 'Cant find turns: ' + name)
+                _ = plot_faulty_signal(df, 'Cant find turns: ' + name)
             print("No found turns with first approach")
             df = utils_darioalgo.add_tug_features(df)
             search_start_ms, search_end_ms, peak1, peak2, tug_data, quality_dario = utils_darioalgo.find_peaks_algo(df)
@@ -357,19 +532,12 @@ def full_algo(df, dataset_id, name):
 
                 quality = quality + quality_dario
 
-                #index_startturn = df['relative_timestamp'][df['msFromStart'] == start_turn].index[0]
-                #index_startturn2 = df['relative_timestamp'][df['msFromStart'] == start_turn2].index[0]
-
-                #start_turn = df['relative_timestamp'][df['msFromStart'] == start_turn].values[0]
-                #start_turn2 = df['relative_timestamp'][df['msFromStart'] == start_turn2].values[0]
-                #end_turn = df.iloc[index_startturn+90]['relative_timestamp']
-                #end_turn2 = df.iloc[index_startturn2+90]['relative_timestamp']
             else:
                 print("Still no turns found")
                 quality_dario = quality + quality_dario + 'No found turns with second approach/'
                 return "no turn found", quality_dario
         else:
-            (start_turn,end_turn),(start_turn2,end_turn2) = result
+            (start_turn,end_turn), (start_turn2,end_turn2) = result
 
         t_start_turn = df.at[start_turn, 'relative_timestamp']
         t_end_turn = df.at[end_turn, 'relative_timestamp']
@@ -435,6 +603,19 @@ def full_algo(df, dataset_id, name):
         t_start_sit_rot = df.at[start_turn2 + start_sit_rot, 'relative_timestamp']
 
         # Final times (adjust +-0.2 because the peak in the derivative/rotRate is around the center of the increase/decrease)
+        if show_info:
+            results = compute_all_timestamp_qualities(
+                t_start_beta_gamma, t_new_start_der, t_new_start_all, t_start_rot,
+                t_end_beta_gamma, t_new_end_der, t_new_end_all, t_end_rot,
+                t_end_stand_beta_gamma, t_end_stand_rot,
+                t_start_sit_beta_gamma, t_start_sit_rot
+            )
+            print_quality_report(results)
+
+            # # Access individual values and qualities
+            # t_start = results['t_start']['value']
+            # t_start_confidence = results['t_start']['quality']['confidence']
+
         t_start = np.mean([t_start_beta_gamma - 0.2, t_new_start_der, t_new_start_all, t_start_rot - 0.2])
         t_end = np.mean([t_end_beta_gamma + 0.2, t_new_end_der, t_new_end_all, t_end_rot + 0.2])
         t_end_stand = np.mean([t_end_stand_beta_gamma, t_end_stand_rot]) + 0.2
@@ -550,8 +731,8 @@ def looping_tests(all_tests):
     return all_tests
 
 
-def labelling_method(test):
-    result, quality = full_algo(test.processed_data, test.dataset_id, str(test.user_id) + '_' + str(test.session_id))
+def labelling_method(test, show_info=False):
+    result, quality = full_algo(test.processed_data, test.dataset_id, str(test.user_id) + '_' + str(test.session_id), show_info=show_info)
     test.results['labelling'] = None
 
     if not isinstance(result, str):
@@ -630,18 +811,21 @@ def darioalgo_method(test):
     return test, quality
 
 
-def compute_method(test, method):
+def compute_method(test, method, show_info=False):
     print(f"Computing method: {method}, for {test.user_id}_{test.session_id}")
     quality_0 = utils_dataquality.quality_assessment(test.processed_data, test.dataset_id)
     test.quality['basic'] = quality_0
 
     if method == 'labelling':
-        test, quality_1 = labelling_method(test)
+        test, quality_1 = labelling_method(test, show_info=show_info)
         test.quality[method] = quality_1
 
     if method == 'darioalgo':
         test, quality_1 = darioalgo_method(test)
         test.quality[method] = quality_1
+
+    if method == 'ml':
+        print("Ml method.")
 
     pass
 

@@ -70,6 +70,7 @@ def phases_eval(all_results, gt_dict):
 def define_res_gts(all_tests, gttype, method):
     all_results = {}
     all_gts = {}
+    manualgt = 0
     for test in all_tests:
         if test.results != None and test.results[method] != None and test.results[method] != '':
             all_results[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.results[method]
@@ -77,6 +78,7 @@ def define_res_gts(all_tests, gttype, method):
             all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_gwalk
             if np.isnan(test.gt_total_gwalk) or test.gt_total_gwalk is None:
                 print("Missing gwalk GT, using manual GT instead")
+                manualgt += 1
                 # warnings.warn(f"Missing gwalk GT for test {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]}", UserWarning)
                 all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
         else:
@@ -86,7 +88,7 @@ def define_res_gts(all_tests, gttype, method):
             # else:
             #     elif gttype == 'manual':
             #         all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
-
+    print(f"Total manual GT used: {manualgt}")
     return all_results, all_gts
 
 

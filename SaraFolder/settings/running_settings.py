@@ -37,6 +37,7 @@ phases_to_consider = 1 # 1: tugt
 parameters = {
     'resamplingdelta': '16.666667ms',
     'stride': 15,  # samples
+    'classBinaryTresh':0.5
 }
 
 param_labelling_algo = {

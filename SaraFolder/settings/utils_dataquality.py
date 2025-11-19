@@ -9,7 +9,7 @@ from scipy.signal import find_peaks
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 plt.ion()
-from SaraFolder.settings import running_settings, utils_labelling, utils_evaluation
+from SaraFolder.settings import running_settings, utils_labelling, utils_evaluation, utils_MLnew
 import pandas as pd
 import matplotlib.pyplot as plt
 from collections import Counter
@@ -625,7 +625,7 @@ def quality_assessment(df, dataset_id):
 
     # if 'Low signal variability' in quality:
     if False:
-        utils_labelling.plot_faulty_signal(df, 'quality check')
+        _= utils_labelling.plot_faulty_signal(df, 'quality check')
 
     # Sampling frequency - not less than 30 samples/second
     # Calculate time span in seconds
@@ -881,13 +881,18 @@ def quality_stats(all_tests, method='labelling'):
 
 
 def plot_tests_witherror(all_tests, error_threshold, method):
+    all_tests_left = []
     for test in all_tests:
         if abs(test.error[method]) > error_threshold:
             print(f"Error higher than {error_threshold}. Absolute error: {np.round(abs(test.error[method]),2)}")
-            test.plot_labelling(method=method, plot=True)
+            if False:
+                test.plot_labelling(method=method, plot=True, show_info=True)
+            if True:
+                utils_MLnew.plot_ml_prediction(test, test.error[method])
         else:
+            all_tests_left.append(test)
             print(f"This test has not error higher than {error_threshold}, error: {test.error[method]}, {test.user_id}_{test.session_id}")
-    pass
+    return all_tests_left
 
 
 def compare_error_all_indiv(error_all, indiv_error_duration):
@@ -907,6 +912,9 @@ def compare_error_all_indiv(error_all, indiv_error_duration):
             for e_i in error_i.keys():
                 if session == e_i:
                     diffs[k] = error_a - error_i[e_i][0]['total_duration']
+                    if diffs[k] != 0:
+                        print("Problem here careful")
+
 
     pass
 
@@ -917,6 +925,7 @@ def quality_error(all_tests):
     # Plot tests that have more than X seconds error
     utils_labelling.labelling_acrossall(all_tests, method=method)
     error_all, indiv_error_duration = compute_error_tests(all_tests, method='labelling')
+    compare_error_all_indiv(error_all, indiv_error_duration)
     plot_tests_witherror(all_tests, error_threshold=10, method='labelling')
 
 
@@ -924,7 +933,7 @@ def quality_error(all_tests):
     error_all, indiv_error_duration = compute_error_tests(all_tests, method='darioalgo')
     plot_tests_witherror(all_tests, error_threshold=20, method='darioalgo')
 
-    # compare_error_all_indiv(error_all, indiv_error_duration)
+    #
 
     if False:
         quality_all = get_quality_all(all_tests, method)
@@ -1669,6 +1678,34 @@ def investigate_tests_comments(all_tests, df_tests):
     return None
 
 
+def plot_gts(gt_gwalk, gt_manual):
+
+
+    diffs = {}
+    for key in gt_gwalk.keys():
+        if gt_gwalk[key] is not None and gt_manual[key] is not None and gt_manual[key] is not np.nan:
+            gtg = gt_gwalk[key]
+            gtm = gt_manual[key]
+            if gtg > 500:
+                gtg = gtg/500
+            if gtm > 500:
+                gtm = gtm/500
+            diffs[key] = gtg - gtm
+
+    fig = plt.figure(figsize=(10, 6))
+    ax = fig.add_subplot(111)
+    ax.plot(list(diffs.keys()), list(diffs.values()), marker='o', linestyle='', color='red')
+    ax.set_xlabel('Test Index')
+    ax.set_ylabel('GWalk GT - Manual GT')
+    ax.set_title('Difference between GWalk and Manual Ground Truths')
+    plt.xticks(rotation=90)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    pass
+
+
 def observe_groundtruth(all_tests):
     gt_gwalk = {}
     gt_manual = {}
@@ -1683,6 +1720,16 @@ def observe_groundtruth(all_tests):
             print(f"Missing gwalk ground truth for test: {index}")
         else:
             tests_gwalk.append(test)
+
+    if False:
+        df_gts = pd.DataFrame(
+            {'GWalk_GT': gt_gwalk,
+             'Manual_GT': gt_manual}
+        )
+
+        df_gts.to_csv(running_settings.results_all + os.sep + 'groundtruths_comparison.csv')
+
+    plot_gts(gt_gwalk, gt_manual)
 
     return tests_gwalk
 

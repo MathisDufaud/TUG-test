@@ -137,7 +137,6 @@ def setup_df(df_m, df_o):
                     df_corrected.loc[i:, elem] += abs(val - base)
                 base = df_corrected[elem].iloc[i]
 
-
         # interpolate - why is it necessary? Isnt' the 'relative_timestamp' column in df_m and in df_corrected, the same?
         df_final = df_m.copy()
 
@@ -152,7 +151,6 @@ def setup_df(df_m, df_o):
         df_final['gamma'] = np.interp(df_m['relative_timestamp'],
                                       df_corrected['relative_timestamp'],
                                       df_corrected['gamma'])
-
 
         df_final['phase'] = np.zeros(len(df_final))
 
@@ -442,7 +440,7 @@ def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp', skip
         test.processed_data = test.processed_data.dropna().reset_index(drop=True)
 
         if k[:-2] not in df_gt_dict.keys() and test.context == 'unsupervised':
-            print("Skipped tests")
+            # print("Skipped tests")
             skipped_tests[k] = test
             # utils_labelling.plot_faulty_signal(t, 'skippedtest: '+k)
         else:
@@ -473,7 +471,24 @@ def process_tests_data(all_tests):
     return all_tests
 
 
-def load_all_tests(dataset_id, context='supervised'):
+def add_gt_manual_all(all_tests, title, dataset):
+    csvpath = running_settings.results_all + os.sep + title
+    dftests = pd.read_csv(csvpath, index_col=0)
+    for test in all_tests:
+        if test.gt_total_manual is None or np.isnan(test.gt_total_manual):
+            index = test.user_id + '_' + str(test.session_id)
+            if 'new' in index:
+                index = index.replace('_pisa_new', '_pisa')
+                if index.split('_')[2] == '1':
+                    index = index.replace('_1', '_2')
+            if index in dftests.index:
+                test.gt_total_manual = dftests.loc[index, 'secEnd'] - dftests.loc[index, 'secStart']
+            else:
+                test.gt_total_manual = None
+    return all_tests
+
+
+def load_all_tests(dataset_id, context='supervised', title='testssupervised_manualmsstartend_new.csv'):
 
     if dataset_id == 'parkapp':
         df_fusion = ready_df()
@@ -518,9 +533,10 @@ def load_all_tests(dataset_id, context='supervised'):
                 all_tests = return_context_tests(tests, context)
                 with open(running_settings.data_synpisa + os.sep + 'pisa_new.pickle', 'wb') as handle:
                     pickle.dump(all_tests, handle)
+
         # Process raw data
         all_tests = process_tests_data(all_tests)
-
+    all_tests = add_gt_manual_all(all_tests, title=title, dataset=dataset_id)
     return all_tests
 
 
@@ -590,3 +606,13 @@ def merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new):
             test.dataset_id = 'pisa'
 
     return all_tests_pisa_new
+
+
+def load_everything():
+    all_tests_pisa_new = load_all_tests(dataset_id='pisa_new', context='supervised')
+    all_tests_pisa = load_all_tests(dataset_id='pisa', context='supervised')
+    all_tests_pisa_new =merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new)
+    all_tests_parkapp = load_all_tests(dataset_id='parkapp', context='supervised')
+    all_tests_synergy = load_all_tests(dataset_id='synergy', context='supervised')
+    all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp, all_tests_pisa_new]))
+    return all_tests
