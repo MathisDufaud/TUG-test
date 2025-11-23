@@ -1,6 +1,7 @@
 import numpy as np
 
-from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, running_settings, utils_dataquality
+from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, running_settings, utils_dataquality, \
+    utils_external
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 from SaraFolder.settings.utils_synergy import utils_synloaders
 
@@ -8,6 +9,8 @@ import matplotlib
 matplotlib.use('TkAgg')
 
 if __name__ == "__main__":
+
+    all_test_extra = utils_external.load_data()
     all_tests = utils_parkapp.load_everything()
 
     if False:

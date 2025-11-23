@@ -3,6 +3,8 @@ import time
 from typing import DefaultDict
 
 import matplotlib
+from scipy.stats import pearsonr, linregress, spearmanr
+
 import numpy as np
 from scipy.signal import find_peaks
 
@@ -308,7 +310,7 @@ def dict_to_plot_stats(all_tests, stats_of_interest):
         for stat in stats_of_interest:
             if stat not in dict_to_plot:
                 dict_to_plot[stat] = []
-            dict_to_plot[stat].append(test.data_quality_stats[stat])
+            dict_to_plot[stat].append(test.quality['statssignal'][stat])
 
     df_plot = pd.DataFrame(dict_to_plot)
     return df_plot
@@ -639,7 +641,7 @@ def quality_assessment(df, dataset_id):
     duration = (df['msFromStart'].max() - df['msFromStart'].min()) / 1000.0
     if duration < 3:
         quality += 'Too short duration/'
-    elif duration > 35:
+    elif duration > 25:
         quality += 'Too long duration/'
 
     return quality
@@ -859,7 +861,7 @@ def get_stats_all(all_tests, method):
     quality_all = {}
     for test in all_tests:
         testid = test.user_id + '_' + str(test.session_id)
-        quality_all[testid] = test.data_quality_stats
+        quality_all[testid] = test.quality[method]
     return quality_all
 
 
@@ -919,11 +921,235 @@ def compare_error_all_indiv(error_all, indiv_error_duration):
     pass
 
 
+def investigate_stats_quality(all_tests, method='labelling'):
+    """
+    Investigate quality statistics across different datasets.
+
+    Args:
+        all_tests: List of test objects
+        method: Method prefix for quality stats (default: 'labelling')
+    """
+
+    # Collect all quality data
+    quality_data = []
+
+    for test in all_tests:
+        quality = test.quality[method + '_stats']
+
+        # Extract user info
+        user_parts = test.user_id.split('_')
+        participant_id = user_parts[0]
+        dataset = user_parts[1] if len(user_parts) > 1 else 'unknown'
+
+        # Extract metrics for each timing variable
+        for metric_name, metric_data in quality.items():
+            quality_info = metric_data['quality']
+
+            quality_data.append({
+                'test_id': test.user_id + '_' + str(test.session_id),
+                'participant_id': participant_id,
+                'dataset': dataset,
+                'session_id': test.session_id,
+                'metric': metric_name,
+                'value': metric_data['value'],
+                'mean': quality_info['mean'],
+                'std': quality_info['std'],
+                'cv': quality_info['cv'],
+                'max_deviation': quality_info['max_deviation'],
+                'confidence': quality_info['confidence'],
+                'agreement': quality_info['agreement'],
+                'quality_score': quality_info['quality_score'],
+                'n_valid': quality_info['n_valid'],
+                'n_total': quality_info['n_total'],
+                'inputs': metric_data['inputs']
+            })
+
+    df = pd.DataFrame(quality_data)
+
+    # ===== OVERALL SUMMARY =====
+    print("=" * 80)
+    print("OVERALL QUALITY SUMMARY")
+    print("=" * 80)
+    print(f"Total tests analyzed: {len(all_tests)}")
+    print(f"Total measurements: {len(df)}")
+    print(f"Datasets: {sorted(df['dataset'].unique())}")
+    print(f"Participants: {sorted(df['participant_id'].unique())}")
+    print(f"Metrics analyzed: {sorted(df['metric'].unique())}")
+    print()
+
+    # ===== DATASET-SPECIFIC ANALYSIS =====
+    print("=" * 80)
+    print("ANALYSIS BY DATASET")
+    print("=" * 80)
+
+    for dataset in sorted(df['dataset'].unique()):
+        dataset_df = df[df['dataset'] == dataset]
+
+        print(f"\n{'─' * 80}")
+        print(f"DATASET: {dataset.upper()}")
+        print(f"{'─' * 80}")
+        print(f"Number of tests: {len(dataset_df['test_id'].unique())}")
+        print(f"Number of participants: {len(dataset_df['participant_id'].unique())}")
+        print(f"Participants: {sorted(dataset_df['participant_id'].unique())}")
+        print()
+
+        # Quality metrics by timing variable
+        print(f"Quality Metrics by Timing Variable:")
+        print("-" * 80)
+
+        summary_stats = dataset_df.groupby('metric').agg({
+            'quality_score': ['mean', 'std', 'min', 'max'],
+            'cv': ['mean', 'std', 'min', 'max'],
+            'confidence': ['mean', 'min'],
+            'agreement': ['mean', 'min'],
+            'n_valid': ['mean', 'min', 'max'],
+            'std': ['mean', 'max']
+        }).round(4)
+
+        print(summary_stats)
+        print()
+
+        # Identify problematic measurements
+        print(f"Problematic Measurements (CV > 0.5 or Quality Score < 0.95):")
+        print("-" * 80)
+        problematic = dataset_df[
+            (dataset_df['cv'] > 0.5) | (dataset_df['quality_score'] < 0.95)
+            ]
+
+        if len(problematic) > 0:
+            for _, row in problematic.iterrows():
+                print(f"  • Test: {row['test_id']}")
+                print(f"    Metric: {row['metric']}")
+                print(f"    Quality Score: {row['quality_score']:.4f}")
+                print(f"    CV: {row['cv']:.4f}")
+                print(f"    Std: {row['std']:.4f}")
+                print(f"    Valid samples: {row['n_valid']}/{row['n_total']}")
+                print(f"    Input values: {row['inputs']}")
+                print()
+        else:
+            print("  ✓ No problematic measurements found!")
+            print()
+
+        # Sample variation analysis
+        print(f"Sample Variation Analysis:")
+        print("-" * 80)
+        print(f"  Tests with 4/4 valid samples: {len(dataset_df[dataset_df['n_valid'] == 4])}")
+        print(f"  Tests with 3/4 valid samples: {len(dataset_df[dataset_df['n_valid'] == 3])}")
+        print(f"  Tests with 2/4 valid samples: {len(dataset_df[dataset_df['n_valid'] == 2])}")
+        print(f"  Tests with <2/4 valid samples: {len(dataset_df[dataset_df['n_valid'] < 2])}")
+        print()
+
+    # ===== CROSS-DATASET COMPARISON =====
+    print("\n" + "=" * 80)
+    print("CROSS-DATASET COMPARISON")
+    print("=" * 80)
+
+    comparison = df.groupby(['dataset', 'metric']).agg({
+        'quality_score': 'mean',
+        'cv': 'mean',
+        'confidence': 'mean',
+        'n_valid': 'mean'
+    }).round(4)
+
+    print("\nAverage Quality Metrics by Dataset and Timing Variable:")
+    print(comparison)
+    print()
+
+    # Statistical tests between datasets
+    print("\nDataset Comparison Summary:")
+    print("-" * 80)
+    for metric in sorted(df['metric'].unique()):
+        metric_df = df[df['metric'] == metric]
+        print(f"\n{metric}:")
+        for dataset in sorted(df['dataset'].unique()):
+            dataset_metric = metric_df[metric_df['dataset'] == dataset]
+            if len(dataset_metric) > 0:
+                print(f"  {dataset}: Quality={dataset_metric['quality_score'].mean():.4f}, "
+                      f"CV={dataset_metric['cv'].mean():.4f}, "
+                      f"n={len(dataset_metric)}")
+
+    # ===== VISUALIZATION =====
+    create_quality_visualizations(df)
+
+    return df
+
+
+def create_quality_visualizations(df):
+    """Create visualizations for quality analysis."""
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    fig.suptitle('Quality Metrics Analysis by Dataset', fontsize=16, fontweight='bold')
+
+    # 1. Quality Score by Dataset and Metric
+    ax1 = axes[0, 0]
+    pivot_quality = df.pivot_table(values='quality_score', index='metric', columns='dataset', aggfunc='mean')
+    pivot_quality.plot(kind='bar', ax=ax1)
+    ax1.set_title('Average Quality Score by Metric and Dataset')
+    ax1.set_ylabel('Quality Score')
+    ax1.set_xlabel('Timing Metric')
+    ax1.legend(title='Dataset')
+    ax1.grid(axis='y', alpha=0.3)
+    ax1.axhline(y=0.95, color='r', linestyle='--', label='Threshold (0.95)')
+
+    # 2. Coefficient of Variation by Dataset
+    ax2 = axes[0, 1]
+    df_cv = df[df['cv'] < 2]  # Filter extreme outliers for visualization
+    sns.boxplot(data=df_cv, x='dataset', y='cv', hue='metric', ax=ax2)
+    ax2.set_title('Coefficient of Variation Distribution')
+    ax2.set_ylabel('CV (lower is better)')
+    ax2.set_xlabel('Dataset')
+    ax2.legend(title='Metric', bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax2.grid(axis='y', alpha=0.3)
+
+    # 3. Valid Samples Distribution
+    ax3 = axes[1, 0]
+    valid_counts = df.groupby(['dataset', 'n_valid']).size().unstack(fill_value=0)
+    valid_counts.plot(kind='bar', stacked=True, ax=ax3)
+    ax3.set_title('Distribution of Valid Samples (out of 4)')
+    ax3.set_ylabel('Count')
+    ax3.set_xlabel('Dataset')
+    ax3.legend(title='Valid Samples', bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax3.grid(axis='y', alpha=0.3)
+
+    # 4. Agreement vs Confidence
+    ax4 = axes[1, 1]
+    for dataset in df['dataset'].unique():
+        dataset_df = df[df['dataset'] == dataset]
+        ax4.scatter(dataset_df['agreement'], dataset_df['confidence'],
+                    label=dataset, alpha=0.6, s=50)
+    ax4.set_title('Agreement vs Confidence by Dataset')
+    ax4.set_xlabel('Agreement')
+    ax4.set_ylabel('Confidence')
+    ax4.legend(title='Dataset')
+    ax4.grid(alpha=0.3)
+    ax4.plot([0.95, 1], [0.95, 1], 'r--', alpha=0.5, label='Threshold')
+
+    plt.tight_layout()
+    plt.show()
+
+    # Additional plot: CV distribution by metric
+    fig2, ax = plt.subplots(figsize=(12, 6))
+    df_cv_plot = df[df['cv'] < 2]  # Filter extreme outliers
+    sns.violinplot(data=df_cv_plot, x='metric', y='cv', hue='dataset', ax=ax)
+    ax.set_title('CV Distribution by Timing Metric and Dataset')
+    ax.set_ylabel('Coefficient of Variation')
+    ax.set_xlabel('Timing Metric')
+    ax.axhline(y=0.5, color='r', linestyle='--', alpha=0.5, label='High variation threshold')
+    ax.legend(title='Dataset')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+
+# Usage example:
+# df_quality = investigate_stats_quality(all_tests, method='labelling')
+
 def quality_error(all_tests):
     method = 'labelling'  # darioalgo or labelling
 
     # Plot tests that have more than X seconds error
-    utils_labelling.labelling_acrossall(all_tests, method=method)
+    utils_labelling.labelling_acrossall(all_tests, method=method, show_info=True)
+    investigate_stats_quality(all_tests, method=method)
     error_all, indiv_error_duration = compute_error_tests(all_tests, method='labelling')
     compare_error_all_indiv(error_all, indiv_error_duration)
     plot_tests_witherror(all_tests, error_threshold=10, method='labelling')
@@ -1260,147 +1486,226 @@ def prepare_quality_error_dataframe1(quality_all, error_all):
 
         # Parse quality string
         quality_str = quality_all[dataset_id]
-        issues = [issue.strip() for issue in quality_str.split('/')
-                  if issue.strip() and issue.strip() != 'okresults']
-
-        # Extract dataset source
         source = dataset_id.split('_')[1] if '_' in dataset_id else 'unknown'
 
-        # Create record
-        record = {
-            'dataset_id': dataset_id,
-            'dataset_source': source,
-            'error': error_all[dataset_id],
-            'abs_error': abs(error_all[dataset_id])
-        }
+        if isinstance(quality_str, str):
+            issues = [issue.strip() for issue in quality_str.split('/')
+                      if issue.strip() and issue.strip() != 'okresults']
 
-        # Add binary flags for each issue type
-        record['has_low_signal_variability'] = any('Low signal variability' in issue for issue in issues)
-        record['has_no_turns'] = any('No turns found' in issue for issue in issues)
-        record['has_peaks_issue'] = any('peaks' in issue.lower() for issue in issues)
-        record['has_any_issue'] = len(issues) > 0
-        record['num_issues'] = len(issues)
-        record['quality_string'] = quality_str
+            # Create record
+            record = {
+                'dataset_id': dataset_id,
+                'dataset_source': source,
+                'error': error_all[dataset_id],
+                'abs_error': abs(error_all[dataset_id])
+            }
+
+            # Add binary flags for each issue type
+            record['has_low_signal_variability'] = any('Low signal variability' in issue for issue in issues)
+            record['has_no_turns'] = any('No turns found' in issue for issue in issues)
+            record['has_peaks_issue'] = any('peaks' in issue.lower() for issue in issues)
+            record['has_any_issue'] = len(issues) > 0
+            record['num_issues'] = len(issues)
+            record['quality_string'] = quality_str
+
+        if isinstance(quality_str, dict):
+            # Extract dataset source
+            record = {
+                'dataset_id': dataset_id,
+                'dataset_source': source,
+                'error': error_all[dataset_id],
+                'abs_error': abs(error_all[dataset_id]),
+            }
+
+            # Add to record all the values from quality_str
+            for key, value in quality_str.items():
+                record[key] = value
 
         records.append(record)
 
     return pd.DataFrame(records)
 
 
-def plot_error_by_quality(df, figsize=(16, 10)):
+def plot_error_by_quality(df, figsize=(16, 10), proba=False):
     """
     Create comprehensive visualization comparing quality categories with errors.
     """
+    if not proba:
+        fig, axes = plt.subplots(2, 3, figsize=figsize)
+        fig.suptitle('Error Analysis by Quality Categories', fontsize=16, fontweight='bold')
 
-    fig, axes = plt.subplots(2, 3, figsize=figsize)
-    fig.suptitle('Error Analysis by Quality Categories', fontsize=16, fontweight='bold')
-
-    # 1. Error distribution: with vs without issues
-    ax = axes[0, 0]
-    data_to_plot = [
-        df[df['has_any_issue'] == False]['abs_error'].dropna(),
-        df[df['has_any_issue'] == True]['abs_error'].dropna()
-    ]
-    bp = ax.boxplot(data_to_plot, labels=['No Issues', 'Has Issues'], patch_artist=True)
-    bp['boxes'][0].set_facecolor('#2ecc71')
-    bp['boxes'][1].set_facecolor('#e74c3c')
-    ax.set_ylabel('Absolute Error')
-    ax.set_title('Error by Overall Quality')
-    ax.grid(True, alpha=0.3)
-
-    if len(data_to_plot[0]) > 0 and len(data_to_plot[1]) > 0:
-        t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
-        ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
-                ha='center', va='top', fontsize=9,
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-
-    # 2. Error by data source
-    ax = axes[0, 1]
-    sources = df['dataset_source'].unique()
-    data_by_source = [df[df['dataset_source'] == src]['abs_error'].dropna() for src in sources]
-    bp = ax.boxplot(data_by_source, labels=sources, patch_artist=True)
-    for patch in bp['boxes']:
-        patch.set_facecolor('#3498db')
-    ax.set_ylabel('Absolute Error')
-    ax.set_title('Error by Data Source')
-    ax.grid(True, alpha=0.3)
-    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
-
-    # 3. Scatter: Number of issues vs Error
-    ax = axes[0, 2]
-    ax.scatter(df['num_issues'], df['abs_error'], alpha=0.6, s=50)
-    ax.set_xlabel('Number of Issues')
-    ax.set_ylabel('Absolute Error')
-    ax.set_title('Error vs Number of Issues')
-    ax.grid(True, alpha=0.3)
-
-    # Add correlation
-    if len(df) > 2:
-        corr = df[['num_issues', 'abs_error']].corr().iloc[0, 1]
-        ax.text(0.05, 0.95, f'r={corr:.3f}', transform=ax.transAxes,
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-
-    # 4. Error by specific issue: Low signal variability
-    ax = axes[1, 0]
-    if df['has_low_signal_variability'].sum() > 0:
+        # 1. Error distribution: with vs without issues
+        ax = axes[0, 0]
         data_to_plot = [
-            df[df['has_low_signal_variability'] == False]['abs_error'].dropna(),
-            df[df['has_low_signal_variability'] == True]['abs_error'].dropna()
+            df[df['has_any_issue'] == False]['abs_error'].dropna(),
+            df[df['has_any_issue'] == True]['abs_error'].dropna()
         ]
-        bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+        bp = ax.boxplot(data_to_plot, labels=['No Issues', 'Has Issues'], patch_artist=True)
         bp['boxes'][0].set_facecolor('#2ecc71')
         bp['boxes'][1].set_facecolor('#e74c3c')
         ax.set_ylabel('Absolute Error')
-        ax.set_title('Low Signal Variability')
+        ax.set_title('Error by Overall Quality')
         ax.grid(True, alpha=0.3)
 
-        if len(data_to_plot[1]) > 0:
+        if len(data_to_plot[0]) > 0 and len(data_to_plot[1]) > 0:
             t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
             ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
                     ha='center', va='top', fontsize=9,
                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
-    # 5. Error by specific issue: No turns
-    ax = axes[1, 1]
-    if df['has_no_turns'].sum() > 0:
-        data_to_plot = [
-            df[df['has_no_turns'] == False]['abs_error'].dropna(),
-            df[df['has_no_turns'] == True]['abs_error'].dropna()
-        ]
-        bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
-        bp['boxes'][0].set_facecolor('#2ecc71')
-        bp['boxes'][1].set_facecolor('#e74c3c')
+        # 2. Error by data source
+        ax = axes[0, 1]
+        sources = df['dataset_source'].unique()
+        data_by_source = [df[df['dataset_source'] == src]['abs_error'].dropna() for src in sources]
+        bp = ax.boxplot(data_by_source, labels=sources, patch_artist=True)
+        for patch in bp['boxes']:
+            patch.set_facecolor('#3498db')
         ax.set_ylabel('Absolute Error')
-        ax.set_title('No Turns Found')
+        ax.set_title('Error by Data Source')
+        ax.grid(True, alpha=0.3)
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+        # 3. Scatter: Number of issues vs Error
+        ax = axes[0, 2]
+        ax.scatter(df['num_issues'], df['abs_error'], alpha=0.6, s=50)
+        ax.set_xlabel('Number of Issues')
+        ax.set_ylabel('Absolute Error')
+        ax.set_title('Error vs Number of Issues')
         ax.grid(True, alpha=0.3)
 
-        if len(data_to_plot[1]) > 0:
-            t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
-            ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
-                    ha='center', va='top', fontsize=9,
+        # Add correlation
+        if len(df) > 2:
+            corr = df[['num_issues', 'abs_error']].corr().iloc[0, 1]
+            ax.text(0.05, 0.95, f'r={corr:.3f}', transform=ax.transAxes,
                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
-    # 6. Error by specific issue: Peaks issue
-    ax = axes[1, 2]
-    if df['has_peaks_issue'].sum() > 0:
-        data_to_plot = [
-            df[df['has_peaks_issue'] == False]['abs_error'].dropna(),
-            df[df['has_peaks_issue'] == True]['abs_error'].dropna()
-        ]
-        bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
-        bp['boxes'][0].set_facecolor('#2ecc71')
-        bp['boxes'][1].set_facecolor('#e74c3c')
-        ax.set_ylabel('Absolute Error')
-        ax.set_title('Peaks Issue')
-        ax.grid(True, alpha=0.3)
+        # 4. Error by specific issue: Low signal variability
+        ax = axes[1, 0]
+        if df['has_low_signal_variability'].sum() > 0:
+            data_to_plot = [
+                df[df['has_low_signal_variability'] == False]['abs_error'].dropna(),
+                df[df['has_low_signal_variability'] == True]['abs_error'].dropna()
+            ]
+            bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+            bp['boxes'][0].set_facecolor('#2ecc71')
+            bp['boxes'][1].set_facecolor('#e74c3c')
+            ax.set_ylabel('Absolute Error')
+            ax.set_title('Low Signal Variability')
+            ax.grid(True, alpha=0.3)
 
-        if len(data_to_plot[1]) > 0:
-            t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
-            ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
-                    ha='center', va='top', fontsize=9,
-                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            if len(data_to_plot[1]) > 0:
+                t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+                ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
+                        ha='center', va='top', fontsize=9,
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
-    plt.tight_layout()
+        # 5. Error by specific issue: No turns
+        ax = axes[1, 1]
+        if df['has_no_turns'].sum() > 0:
+            data_to_plot = [
+                df[df['has_no_turns'] == False]['abs_error'].dropna(),
+                df[df['has_no_turns'] == True]['abs_error'].dropna()
+            ]
+            bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+            bp['boxes'][0].set_facecolor('#2ecc71')
+            bp['boxes'][1].set_facecolor('#e74c3c')
+            ax.set_ylabel('Absolute Error')
+            ax.set_title('No Turns Found')
+            ax.grid(True, alpha=0.3)
+
+            if len(data_to_plot[1]) > 0:
+                t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+                ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
+                        ha='center', va='top', fontsize=9,
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        # 6. Error by specific issue: Peaks issue
+        ax = axes[1, 2]
+        if df['has_peaks_issue'].sum() > 0:
+            data_to_plot = [
+                df[df['has_peaks_issue'] == False]['abs_error'].dropna(),
+                df[df['has_peaks_issue'] == True]['abs_error'].dropna()
+            ]
+            bp = ax.boxplot(data_to_plot, labels=['No', 'Yes'], patch_artist=True)
+            bp['boxes'][0].set_facecolor('#2ecc71')
+            bp['boxes'][1].set_facecolor('#e74c3c')
+            ax.set_ylabel('Absolute Error')
+            ax.set_title('Peaks Issue')
+            ax.grid(True, alpha=0.3)
+
+            if len(data_to_plot[1]) > 0:
+                t_stat, p_val = scipy_stats.ttest_ind(data_to_plot[0], data_to_plot[1])
+                ax.text(0.5, 0.95, f'p={p_val:.4f}', transform=ax.transAxes,
+                        ha='center', va='top', fontsize=9,
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        plt.tight_layout()
+    else:
+
+        """
+        Explore the relationship between error metrics (error, abs_error) 
+        and quality statistics (mean, median, std, min, max, mean_entropy, derivative_std).
+
+        Returns:
+        --------
+        fig : matplotlib figure object
+        summary_df : dataframe with correlations to error/abs_error
+        """
+        quality_cols = [s for s in df.columns if 'error' not in s and 'dataset' not in s and 'issue' not in s]
+
+        rows = []
+
+        n = len(quality_cols)
+        ncols = 3
+        nrows = int(np.ceil(n / ncols))
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+        axes = axes.flatten()
+
+        for idx, col in enumerate(quality_cols):
+
+            if col not in df.columns:
+                continue
+
+            x = df[col].values
+            err = df["error"].values
+            abserr = df["abs_error"].values
+
+            # Compute Pearson correlations
+            pear_err, pear_err_p = pearsonr(x, err)
+            pear_abs, pear_abs_p = pearsonr(x, abserr)
+
+            # Store results for the summary dataframe
+            rows.append({
+                "metric": col,
+                "pearson_error": pear_err,
+                "pearson_error_pvalue": pear_err_p,
+                "pearson_abs_error": pear_abs,
+                "pearson_abs_error_pvalue": pear_abs_p,
+            })
+
+            # ---- Plotting ----
+            ax = axes[idx]
+            ax.scatter(x, err, alpha=0.6)
+
+            # Regression line
+            slope, intercept, _, _, _ = linregress(x, err)
+            x_vals = np.linspace(np.min(x), np.max(x), 100)
+            ax.plot(x_vals, slope * x_vals + intercept, linewidth=2)
+
+            # Title with correlation
+            ax.set_title(f"{col} | r = {pear_err:.3f}, p = {pear_err_p:.3f}")
+            ax.set_xlabel(col)
+            ax.set_ylabel("error")
+
+        # Remove empty axes
+        for j in range(idx + 1, len(axes)):
+            fig.delaxes(axes[j])
+
+        fig.tight_layout()
+
+        summary_df = pd.DataFrame(rows)
+
     return fig, df
 
 
@@ -1702,6 +2007,124 @@ def plot_gts(gt_gwalk, gt_manual):
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
+
+    # Prepare data: use gt_gwalk if available, otherwise gt_manual
+    data_by_dataset = {'synergy': [], 'pisa': [], 'parkapp': []}
+    colors_by_dataset = {'synergy': [], 'pisa': [], 'parkapp': []}
+    all_data = []
+    all_colors = []
+
+    for key in gt_gwalk.keys():
+        # Determine dataset
+        if 'synergy' in key:
+            dataset = 'synergy'
+        elif 'pisa' in key:
+            dataset = 'pisa'
+        elif 'parkapp' in key:
+            dataset = 'parkapp'
+        else:
+            continue
+
+        # Use gt_gwalk if available, otherwise gt_manual
+        if gt_gwalk[key] is not None and not np.isnan(gt_gwalk[key]):
+            print("ok")
+            value = gt_gwalk[key]
+            if value > 500: value=value/1000
+            color = 'primary'  # Blue for gt_gwalk
+        else:
+            print("not ok - manual" + key)
+            value = gt_manual[key]
+            if value > 500: value=value/1000
+            color = 'manual'  # Orange for gt_manual
+
+        data_by_dataset[dataset].append(value)
+        colors_by_dataset[dataset].append(color)
+        all_data.append(value)
+        all_colors.append(color)
+
+    # Create figure with 4 subplots
+    fig, axes = plt.subplots(1, 4, figsize=(16, 6))
+
+    datasets = ['synergy', 'pisa', 'parkapp', 'all']
+    titles = ['Synergy', 'PISA', 'ParkApp', 'All Datasets']
+
+    for idx, (ax, dataset, title) in enumerate(zip(axes, datasets, titles)):
+        if dataset == 'all':
+            data = all_data
+            colors = all_colors
+        else:
+            data = data_by_dataset[dataset]
+            colors = colors_by_dataset[dataset]
+
+        if not data:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
+            ax.set_title(title)
+            continue
+
+        # Separate data by color
+        primary_data = [d for d, c in zip(data, colors) if c == 'primary']
+        manual_data = [d for d, c in zip(data, colors) if c == 'manual']
+
+        # Create boxplot
+        positions = []
+        box_data = []
+        box_colors = []
+
+        if primary_data:
+            positions.append(1)
+            box_data.append(primary_data)
+            box_colors.append('#1f77b4')  # Blue
+
+        if manual_data:
+            positions.append(1.3)
+            box_data.append(manual_data)
+            box_colors.append('#ff7f0e')  # Orange
+
+        bp = ax.boxplot(box_data, positions=positions, widths=0.25, patch_artist=True,
+                        showfliers=True, notch=False)
+
+        # Color the boxes
+        for patch, color in zip(bp['boxes'], box_colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+
+        # Styling
+        if len(box_data) == 1:
+            title = title + ' (' + str(len(np.concatenate(box_data))) + ' tests)'
+        else:
+            title = title + ' (' + str(len(box_data[0])) + ' gwalk, '+ str(len(box_data[1])) + ' manual)'
+        ax.set_title(title, fontsize=14)
+        ax.set_ylabel('Ground Truth Value', fontsize=11)
+        ax.set_xticks([])
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+    # Unify y-axis across all subplots
+    all_values = all_data
+    if all_values:
+        y_min = min(all_values) * 0.95
+        y_max = max(all_values) * 1.05
+        for ax in axes:
+            ax.set_ylim(y_min, y_max)
+
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='#1f77b4', alpha=0.7, label='gt_gwalk'),
+        Patch(facecolor='#ff7f0e', alpha=0.7, label='gt_manual (fallback)')
+    ]
+    fig.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, 0.99),
+               ncol=2, frameon=False, fontsize=11)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig('ground_truth_boxplot.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    print(f"Total samples - Synergy: {len(data_by_dataset['synergy'])}, "
+          f"PISA: {len(data_by_dataset['pisa'])}, "
+          f"ParkApp: {len(data_by_dataset['parkapp'])}, "
+          f"All: {len(all_data)}")
 
     pass
 

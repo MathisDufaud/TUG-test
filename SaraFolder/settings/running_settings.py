@@ -1,6 +1,7 @@
 ##################### Data
 data_parkapp = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_parkapp"
 data_synpisa = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_synpisa"
+data_mateysanz = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_external\matey_sanz\DATA"
 test_id_start_parkapp = 0
 test_id_start_synergy = 0
 test_id_start_pisatug = 0
@@ -37,7 +38,7 @@ phases_to_consider = 1 # 1: tugt
 parameters = {
     'resamplingdelta': '16.666667ms',
     'stride': 15,  # samples
-    'classBinaryTresh':0.5
+    'classBinaryTresh':0.65
 }
 
 param_labelling_algo = {
@@ -62,5 +63,6 @@ param_opt_labelling_algo = {
     'max_amplitutde_start_turn_sample':[0.25, 0.3, 0.35],
     'MCSFD':  [20, 30, 40],
 }
+
 
 

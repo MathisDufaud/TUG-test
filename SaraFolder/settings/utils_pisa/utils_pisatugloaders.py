@@ -573,10 +573,15 @@ def process_data(df_raw):
         if not 'relative_timestamp' in df_raw.columns:
             df_raw['relative_timestamp'] = pd.to_timedelta(df_raw['msFromStart'], unit='milliseconds').dt.total_seconds()
 
-        if not 'sqrt(X²+Y²+Z²)' in df_raw.columns:
+        if not 'sqrt(X²+Y²+Z²)' in df_raw.columns and 'accX' in df_raw.columns:
             df_raw['sqrt(X²+Y²+Z²)'] = np.sqrt((np.abs(df_raw['accX']))**2 +
                                            (np.abs(df_raw['accY']))**2 +
                                            (np.abs(df_raw['accZ']))**2)
+
+        elif not 'sqrt(X²+Y²+Z²)' in df_raw.columns and 'acc.x' in df_raw.columns:
+            df_raw['sqrt(X²+Y²+Z²)'] = np.sqrt((np.abs(df_raw['acc.x'])) ** 2 +
+                                               (np.abs(df_raw['acc.y'])) ** 2 +
+                                               (np.abs(df_raw['acc.z'])) ** 2)
 
         df_final = resample60(df_raw)
 
@@ -585,11 +590,21 @@ def process_data(df_raw):
             df_final = df_final.rename(columns={'rotA':'rotRate.alpha', 'rotB':'rotRate.beta', 'rotG':'rotRate.gamma'})
             df_final = df_final.rename(columns={'accX':'acc.x', 'accY':'acc.y', 'accZ':'acc.z'})
 
-        df_final = smoothalphabeta(df_final, plot=False)
+        if 'alpha' in df_final.columns and 'beta' in df_final.columns:
+            df_final = smoothalphabeta(df_final, plot=False)
 
         if 'all' not in df_final:
             df_final = utils_parkapp.new_columns(df_final)
 
+        if 'label' in df_raw.columns:
+            df_raw['testBoool'] = False
+            df_final['testBoool'] = False
+
+            df_raw.loc[df_raw['label'] != 'SEATED', 'testBoool'] = True
+            msStart = df_raw[df_raw['testBoool'] == True]['msFromStart'].values[0]
+            msEnd = df_raw[df_raw['testBoool'] == True]['msFromStart'].values[-1]
+            df_final.loc[(df_final['msFromStart'] >= msStart) &
+                                    (df_final['msFromStart'] <= msEnd), 'testBool'] = True
 
         return df_final
     else:

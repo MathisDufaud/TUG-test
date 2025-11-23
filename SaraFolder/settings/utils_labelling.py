@@ -509,123 +509,116 @@ def full_algo(df, dataset_id, name, show_info=False):
 
     # find the 2 turns. 20 samples correspond approx to 1/3 seconds
     alpha_ma = utils_parkapp.moving_average(df['alpha'], 20)
-    try:
-        result = start_change(alpha_ma, show_info=show_info)
+    result = start_change(alpha_ma, show_info=show_info)
 
-        if result is None:
-            quality = 'No turns found with classic approach/'
-            if False:
-                _ = plot_faulty_signal(df, 'Cant find turns: ' + name)
-            print("No found turns with first approach")
-            df = utils_darioalgo.add_tug_features(df)
-            search_start_ms, search_end_ms, peak1, peak2, tug_data, quality_dario = utils_darioalgo.find_peaks_algo(df)
+    if result is None:
+        quality = 'No turns found with classic approach/'
+        if False:
+            _ = plot_faulty_signal(df, 'Cant find turns: ' + name)
+        print("No found turns with first approach")
+        df = utils_darioalgo.add_tug_features(df)
+        search_start_ms, search_end_ms, peak1, peak2, tug_data, quality_dario = utils_darioalgo.find_peaks_algo(df)
 
-            if peak1 is not None and peak2 is not None:
-                start_turn = peak1['ms']
-                start_turn2 = peak2['ms']
-                start_turn = df['relative_timestamp'][df['msFromStart'] == start_turn].index[0]
-                start_turn2 = df['relative_timestamp'][df['msFromStart'] == start_turn2].index[0]
-                end_turn = start_turn+90
-                end_turn2 = start_turn2+90
-                if end_turn2 > df.shape[0]:
-                    end_turn2 = df.shape[0]-1
+        if peak1 is not None and peak2 is not None:
+            start_turn = peak1['ms']
+            start_turn2 = peak2['ms']
+            start_turn = df['relative_timestamp'][df['msFromStart'] == start_turn].index[0]
+            start_turn2 = df['relative_timestamp'][df['msFromStart'] == start_turn2].index[0]
+            end_turn = start_turn+90
+            end_turn2 = start_turn2+90
+            if end_turn2 > df.shape[0]:
+                end_turn2 = df.shape[0]-1
 
-                quality = quality + quality_dario
+            quality = quality + quality_dario
 
-            else:
-                print("Still no turns found")
-                quality_dario = quality + quality_dario + 'No found turns with second approach/'
-                return "no turn found", quality_dario
         else:
-            (start_turn,end_turn), (start_turn2,end_turn2) = result
+            print("Still no turns found")
+            quality_dario = quality + quality_dario + 'No found turns with second approach/'
+            return "no turn found", quality_dario
+    else:
+        (start_turn,end_turn), (start_turn2,end_turn2) = result
 
-        t_start_turn = df.at[start_turn, 'relative_timestamp']
-        t_end_turn = df.at[end_turn, 'relative_timestamp']
-        t_start_turn2 = df.at[start_turn2, 'relative_timestamp']
-        t_end_turn2 = df.at[end_turn2, 'relative_timestamp']
+    t_start_turn = df.at[start_turn, 'relative_timestamp']
+    t_end_turn = df.at[end_turn, 'relative_timestamp']
+    t_start_turn2 = df.at[start_turn2, 'relative_timestamp']
+    t_end_turn2 = df.at[end_turn2, 'relative_timestamp']
 
-        start_limit = max(df.at[0, 'relative_timestamp'], t_start_turn - (t_end_turn2 - t_start_turn) * 1.5)
-        end_limit = min(df.at[df.index[-1], 'relative_timestamp'], t_end_turn2 + (t_end_turn2 - t_start_turn))
+    start_limit = max(df.at[0, 'relative_timestamp'], t_start_turn - (t_end_turn2 - t_start_turn) * 1.5)
+    end_limit = min(df.at[df.index[-1], 'relative_timestamp'], t_end_turn2 + (t_end_turn2 - t_start_turn))
 
-        df_red = df.loc[(df['relative_timestamp'] >= start_limit) & (df['relative_timestamp'] <= end_limit)].copy()
+    df_red = df.loc[(df['relative_timestamp'] >= start_limit) & (df['relative_timestamp'] <= end_limit)].copy()
 
-        if df_red.empty:
-            quality = quality + 'Empty df (3)/'
-            return "df_red empty", quality
+    if df_red.empty:
+        quality = quality + 'Empty df (3)/'
+        return "df_red empty", quality
 
-        df_red.reset_index(drop=True, inplace=True)
+    df_red.reset_index(drop=True, inplace=True)
 
-        # Subset after second turn end
-        df_testend = df_red.loc[(df_red['relative_timestamp'] >= t_end_turn2 - 1)].copy()
-        df_teststart = df_red.loc[(df_red['relative_timestamp'] <= t_start_turn)].copy()
-        if df_testend.empty:
-            quality = quality + 'Empty df (4)'
-            return "df_test empty", quality
+    # Subset after second turn end
+    df_testend = df_red.loc[(df_red['relative_timestamp'] >= t_end_turn2 - 1)].copy()
+    df_teststart = df_red.loc[(df_red['relative_timestamp'] <= t_start_turn)].copy()
+    if df_testend.empty:
+        quality = quality + 'Empty df (4)'
+        return "df_test empty", quality
 
-        df_testend.reset_index(drop=True, inplace=True)
+    df_testend.reset_index(drop=True, inplace=True)
 
-        # --- Detect zero-phase regions (derivative & all) ---
-        # Finding index before first turn and after the last turn
-        new_start_der = find_zero_phase_end2(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'derivative'])
-        new_end_der = find_zero_phase_end_reverse2(df_testend['derivative'], 20) # Similar to previous, but scans forward instead of backward.
-        t_new_start_der = df_red.at[new_start_der, 'relative_timestamp']
-        t_new_end_der = df_testend.at[new_end_der, 'relative_timestamp']
+    # --- Detect zero-phase regions (derivative & all) ---
+    # Finding index before first turn and after the last turn
+    new_start_der = find_zero_phase_end2(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'derivative'])
+    new_end_der = find_zero_phase_end_reverse2(df_testend['derivative'], 20) # Similar to previous, but scans forward instead of backward.
+    t_new_start_der = df_red.at[new_start_der, 'relative_timestamp']
+    t_new_end_der = df_testend.at[new_end_der, 'relative_timestamp']
 
-        # Do the same for the “all” signal (with stronger threshold).
-        new_start_all = find_zero_phase_end2(
-            utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
-        new_end_all = find_zero_phase_end_reverse2(utils_parkapp.moving_average(df_testend['all']), 20, k=0.15)
-        t_new_start_all = df_red.at[new_start_all, 'relative_timestamp']
-        t_new_end_all = df_testend.at[new_end_all, 'relative_timestamp']
+    # Do the same for the “all” signal (with stronger threshold).
+    new_start_all = find_zero_phase_end2(
+        utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'all']), 20, k=0.15)
+    new_end_all = find_zero_phase_end_reverse2(utils_parkapp.moving_average(df_testend['all']), 20, k=0.15)
+    t_new_start_all = df_red.at[new_start_all, 'relative_timestamp']
+    t_new_end_all = df_testend.at[new_end_all, 'relative_timestamp']
 
-        # Find first/last peaks in der_beta_gamma and rotRate_beta_gamma
-        start_beta_gamma = first_peak(
-            utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
-        end_beta_gamma = last_peak(utils_parkapp.moving_average(df_testend['der_beta_gamma']))
-        t_start_beta_gamma = df_red.at[start_beta_gamma, 'relative_timestamp']
-        t_end_beta_gamma = df_testend.at[end_beta_gamma, 'relative_timestamp']
-        start_rot = first_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'rotRate_beta_gamma']), 75)
-        end_rot = last_peak(utils_parkapp.moving_average(df_testend['rotRate_beta_gamma']), 75)
-        t_start_rot = df_red.at[start_rot, 'relative_timestamp']
-        t_end_rot = df_testend.at[end_rot, 'relative_timestamp']
+    # Find first/last peaks in der_beta_gamma and rotRate_beta_gamma
+    start_beta_gamma = first_peak(
+        utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'der_beta_gamma']))
+    end_beta_gamma = last_peak(utils_parkapp.moving_average(df_testend['der_beta_gamma']))
+    t_start_beta_gamma = df_red.at[start_beta_gamma, 'relative_timestamp']
+    t_end_beta_gamma = df_testend.at[end_beta_gamma, 'relative_timestamp']
+    start_rot = first_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] <= t_start_turn, 'rotRate_beta_gamma']), 75)
+    end_rot = last_peak(utils_parkapp.moving_average(df_testend['rotRate_beta_gamma']), 75)
+    t_start_rot = df_red.at[start_rot, 'relative_timestamp']
+    t_end_rot = df_testend.at[end_rot, 'relative_timestamp']
 
-        # end of standing and start of sitting
-        end_stand_beta_gamma = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_beta_gamma, 'der_beta_gamma']), 1)
-        start_sit_beta_gamma = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) &
-                                                                                  (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']), 1)
-        t_end_stand_beta_gamma = df_red.at[start_beta_gamma + end_stand_beta_gamma, 'relative_timestamp']
-        t_start_sit_beta_gamma = df.at[start_turn2 + start_sit_beta_gamma, 'relative_timestamp']
+    # end of standing and start of sitting
+    end_stand_beta_gamma = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_beta_gamma, 'der_beta_gamma']), 1)
+    start_sit_beta_gamma = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) &
+                                                                              (df_red['relative_timestamp'] <= t_end_beta_gamma), 'der_beta_gamma']), 1)
+    t_end_stand_beta_gamma = df_red.at[start_beta_gamma + end_stand_beta_gamma, 'relative_timestamp']
+    t_start_sit_beta_gamma = df.at[start_turn2 + start_sit_beta_gamma, 'relative_timestamp']
 
-        end_stand_rot = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_rot, 'rotRate_beta_gamma']), 70)
-        start_sit_rot = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) &
-                                                                           (df_red['relative_timestamp'] <= t_end_rot), 'rotRate_beta_gamma']), 70)
-        t_end_stand_rot = df_red.at[start_rot + end_stand_rot, 'relative_timestamp']
-        t_start_sit_rot = df.at[start_turn2 + start_sit_rot, 'relative_timestamp']
+    end_stand_rot = last_peak(utils_parkapp.moving_average(df_red.loc[df_red['relative_timestamp'] >= t_start_rot, 'rotRate_beta_gamma']), 70)
+    start_sit_rot = first_peak(utils_parkapp.moving_average(df_red.loc[(df_red['relative_timestamp'] >= t_start_turn2) &
+                                                                       (df_red['relative_timestamp'] <= t_end_rot), 'rotRate_beta_gamma']), 70)
+    t_end_stand_rot = df_red.at[start_rot + end_stand_rot, 'relative_timestamp']
+    t_start_sit_rot = df.at[start_turn2 + start_sit_rot, 'relative_timestamp']
 
-        # Final times (adjust +-0.2 because the peak in the derivative/rotRate is around the center of the increase/decrease)
-        if show_info:
-            results = compute_all_timestamp_qualities(
-                t_start_beta_gamma, t_new_start_der, t_new_start_all, t_start_rot,
-                t_end_beta_gamma, t_new_end_der, t_new_end_all, t_end_rot,
-                t_end_stand_beta_gamma, t_end_stand_rot,
-                t_start_sit_beta_gamma, t_start_sit_rot
-            )
-            print_quality_report(results)
+    # Final times (adjust +-0.2 because the peak in the derivative/rotRate is around the center of the increase/decrease)
+    t_start = np.mean([t_start_beta_gamma - 0.2, t_new_start_der, t_new_start_all, t_start_rot - 0.2])
+    t_end = np.mean([t_end_beta_gamma + 0.2, t_new_end_der, t_new_end_all, t_end_rot + 0.2])
+    t_end_stand = np.mean([t_end_stand_beta_gamma, t_end_stand_rot]) + 0.2
+    t_start_sit = np.mean([t_start_sit_beta_gamma, t_start_sit_rot]) - 0.2
+    quality = quality + 'okresults/'
 
-            # # Access individual values and qualities
-            # t_start = results['t_start']['value']
-            # t_start_confidence = results['t_start']['quality']['confidence']
-
-        t_start = np.mean([t_start_beta_gamma - 0.2, t_new_start_der, t_new_start_all, t_start_rot - 0.2])
-        t_end = np.mean([t_end_beta_gamma + 0.2, t_new_end_der, t_new_end_all, t_end_rot + 0.2])
-        t_end_stand = np.mean([t_end_stand_beta_gamma, t_end_stand_rot]) + 0.2
-        t_start_sit = np.mean([t_start_sit_beta_gamma, t_start_sit_rot]) - 0.2
-
-        quality = quality + 'okresults/'
-    except:
-        print(1)
-
-    return (t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end), quality
+    if show_info:
+        results = compute_all_timestamp_qualities(
+            t_start_beta_gamma, t_new_start_der, t_new_start_all, t_start_rot,
+            t_end_beta_gamma, t_new_end_der, t_new_end_all, t_end_rot,
+            t_end_stand_beta_gamma, t_end_stand_rot,
+            t_start_sit_beta_gamma, t_start_sit_rot
+        )
+        print_quality_report(results)
+        return (t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end), quality, results
+    else:
+        return (t_start, t_end_stand, t_start_turn, t_end_turn, t_start_turn2, t_end_turn2, t_start_sit, t_end), quality, None
 
 def full_algo_param_optimization(df, dataset_id,
                                  window_size,
@@ -732,7 +725,7 @@ def looping_tests(all_tests):
 
 
 def labelling_method(test, show_info=False):
-    result, quality = full_algo(test.processed_data, test.dataset_id, str(test.user_id) + '_' + str(test.session_id), show_info=show_info)
+    result, quality, res_stats = full_algo(test.processed_data, test.dataset_id, str(test.user_id) + '_' + str(test.session_id), show_info=show_info)
     test.results['labelling'] = None
 
     if not isinstance(result, str):
@@ -748,12 +741,11 @@ def labelling_method(test, show_info=False):
             "t_end": t_end
         }
         test.results['labelling'] = algo_results
-
     else:
         print(result)
         test.results['labelling'] = result
 
-    return test, quality
+    return test, quality, res_stats
 
 def labelling_method_optimization(test, method):
 
@@ -817,8 +809,9 @@ def compute_method(test, method, show_info=False):
     test.quality['basic'] = quality_0
 
     if method == 'labelling':
-        test, quality_1 = labelling_method(test, show_info=show_info)
+        test, quality_1, res_stats = labelling_method(test, show_info=show_info)
         test.quality[method] = quality_1
+        test.quality[method + '_stats'] = res_stats
 
     if method == 'darioalgo':
         test, quality_1 = darioalgo_method(test)
@@ -836,10 +829,10 @@ def compute_method_optimization(test, method):
 
     pass
 
-def labelling_acrossall(all_tests, method):
+def labelling_acrossall(all_tests, method, show_info=False):
     # Run method
     for t in all_tests:
-        t.plot_labelling(method=method, plot=False)
+        t.plot_labelling(method=method, plot=False, show_info=show_info)
 
     return None
 
@@ -860,3 +853,105 @@ def observe_noresult_tests(norestests, method):
         print(f"Test {test_id}: {test.results[method]}")
         blacklist[test_id] = test.results[method]
     return blacklist
+
+
+def qualityinfoprocess(text_lines, quality_info):
+    if isinstance(quality_info, dict):
+        for k, v in quality_info.items():
+            if k == 'mlproba_stats':
+                text_lines.append("  ML Probability Stats:")
+                linesml = []
+                for i, (stat_key, stat_value) in enumerate(v.items()):
+                    if i % 3 == 0 and i != 0:
+                        linesml.append(f"{stat_key}: {np.round(stat_value, 1)}, \n")
+                    else:
+                        linesml.append(f"{stat_key}: {np.round(stat_value, 1)}, ")
+
+                linesml_str = ''.join(linesml).rstrip(', ')
+                text_lines.append(linesml_str)
+            elif k != 'labelling stats':
+                if not 'okresults/' == v and v is not None:
+                    text_lines.append(f"  • {v.strip('/')}")
+
+    else:
+        text_lines.append("  No quality info")
+
+    return text_lines
+
+
+def add_biginfobox(fig, test):
+    """
+    Add a large text box on the right side of the figure containing:
+    1) Test name: user_id + session_id
+    2) Ground truth sources: gt_total_gwalk, gt_total_manual
+    3) Durations from different methods: ml, labelling
+    4) Sampling frequency
+    5) Quality characteristics: test.quality
+    """
+
+    # Prepare the info text
+    test_name = f"{test.user_id}_{test.session_id}"
+
+    gt_gwalk = getattr(test, "gt_total_gwalk", None)
+    if gt_gwalk > 500: gt_gwalk = gt_gwalk/1000
+    gt_manual = getattr(test, "gt_total_manual", None)
+    if gt_manual > 500: gt_manual = gt_manual/1000
+
+    # ML-estimated duration
+    if "ml" in test.results:
+        ml_dur = test.results["ml"]['t_end'] - test.results["ml"]['t_start']
+        if ml_dur > 500: ml_dur = ml_dur/1000
+    else:
+        ml_dur = None
+
+    # Labelling-estimated duration
+    if "labelling" in test.results:
+        lab_dur = test.results["labelling"]['t_end'] - test.results["labelling"]['t_start']
+        if lab_dur > 500: lab_dur = lab_dur/1000
+    else:
+        lab_dur = None
+
+    # Sampling frequency
+    fs = np.round(len(test.processed_data) / ((test.processed_data['relative_timestamp'].iloc[-1] - test.processed_data['relative_timestamp'].iloc[0])),2)
+
+    # Quality dictionary (unknown format)
+    quality_info = test.quality if hasattr(test, "quality") else None
+
+    text_lines = [
+        f"TEST ID: {test_name}",
+        "GROUND TRUTH DURATIONS:",
+        f"  • GWALK:   {gt_gwalk:.2f} s" if gt_gwalk is not None else "  • GWALK:   N/A",
+        f"  • MANUAL:  {gt_manual:.2f} s" if gt_manual is not None else "  • MANUAL:  N/A",
+        "ESTIMATED DURATIONS:",
+        f"  • ML:          {ml_dur:.2f} s" if ml_dur is not None else "  • ML:          N/A",
+        f"  • LABELLING:   {lab_dur:.2f} s" if lab_dur is not None else "  • LABELLING:   N/A",
+        f"SAMPLING FREQUENCY: {fs} Hz" if fs is not None else "SAMPLING FREQUENCY: N/A",
+        "QUALITY METRICS:",
+    ]
+
+    # Add each quality key-value
+    text_lines = qualityinfoprocess(text_lines, quality_info)
+
+    full_text = "\n".join(text_lines)
+
+    from matplotlib.offsetbox import AnchoredText
+
+    # Attach box to an axis (choose ax1, ax2, or ax3)
+    ax = fig.axes[1]   # last subplot (your sensor plot)
+
+    box = AnchoredText(
+        full_text,
+        loc='upper right',
+        prop=dict(family="monospace", size=11),
+        frameon=True,
+        borderpad=0.5
+    )
+
+    # Styling
+    box.patch.set_facecolor("lightyellow")
+    box.patch.set_edgecolor("black")
+    box.patch.set_linewidth(1.5)
+
+    ax.add_artist(box)
+    fig.canvas.draw()
+    return fig

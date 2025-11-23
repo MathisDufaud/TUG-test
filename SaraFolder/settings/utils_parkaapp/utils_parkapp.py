@@ -109,10 +109,10 @@ def new_columns(df_final):
                               + ((np.abs(df_final['rotRate.gamma']) - np.min(np.abs(df_final['rotRate.gamma']))) / (
             np.max(np.abs(df_final['rotRate.gamma'])) - np.min(np.abs(df_final['rotRate.gamma'])))) ** 2)
 
-    df_final['derivative'] = np.abs(np.gradient(df_final['alpha'])) + np.abs(
-        np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
-
-    df_final['der_beta_gamma'] = np.abs(np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
+    if 'alpha' in df_final.columns:
+        df_final['derivative'] = np.abs(np.gradient(df_final['alpha'])) + np.abs(
+            np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
+        df_final['der_beta_gamma'] = np.abs(np.gradient(df_final['beta'])) + np.abs(np.gradient(df_final['gamma']))
 
     df_final['rotRate_beta_gamma'] = np.sqrt((df_final['rotRate.beta']) ** 2 + (df_final['rotRate.gamma']) ** 2)
 
@@ -446,8 +446,6 @@ def set_up_tests(df_fusion, df_gt_dict, times_gwalk, dataset_id='parkaapp', skip
         else:
             all_tests_valid.append(test)
 
-
-
     return all_tests_valid, skipped_tests
 
 def return_context_tests(tests, context):
@@ -611,7 +609,7 @@ def merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new):
 def load_everything():
     all_tests_pisa_new = load_all_tests(dataset_id='pisa_new', context='supervised')
     all_tests_pisa = load_all_tests(dataset_id='pisa', context='supervised')
-    all_tests_pisa_new =merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new)
+    all_tests_pisa_new = merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new)
     all_tests_parkapp = load_all_tests(dataset_id='parkapp', context='supervised')
     all_tests_synergy = load_all_tests(dataset_id='synergy', context='supervised')
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp, all_tests_pisa_new]))

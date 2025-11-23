@@ -12,7 +12,7 @@ from keras.models import Sequential, load_model
 from keras.layers import Conv1D, Bidirectional, LSTM, TimeDistributed, Dense, Dropout
 
 
-from SaraFolder.settings import utils_plots, running_settings
+from SaraFolder.settings import utils_plots, running_settings, utils_MLnew
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -147,6 +147,14 @@ class TUGTest:
         self.results: Optional[Dict] = {}
         self.quality: Optional[Dict] = {}
 
+    def get_groundtruth(self):
+        gt = self.gt_total_gwalk
+        if gt is None or np.isnan(gt):
+            gt = self.gt_total_manual
+        if gt > 500:
+            gt = gt / 1000
+        return gt
+
     def plot_raw_data(self):
         """
         Plot raw sensor data.
@@ -236,118 +244,116 @@ class TUGTest:
         }
 
     def plot_labelling(self, method, plot=False, optimization=False, show_info=False):
-        if show_info:
-            if not isinstance(self.processed_data, str):
+        if not isinstance(self.processed_data, str):
+            if show_info:
                 utils_labelling.compute_method(self, method, show_info=show_info)
+            else:
+                if not optimization:
+                    utils_labelling.compute_method(self, method)
 
-        if not optimization:
-            if not isinstance(self.processed_data, str):
-                utils_labelling.compute_method(self, method)
+                    if not isinstance(self.results[method], str):
+                        results = Results(**self.results[method])
 
-                if not isinstance(self.results[method], str):
-                    results = Results(**self.results[method])
+                        if plot:
+                            df_plot = self.processed_data
+                            if self.gt_phases is None:
+                                print("No phases detected, cannot plot.")
+                            else:
+                                t_start = self.gt_phases.t_start
+                                t_end_stand = self.gt_phases.t_end_stand
+                                t_start_turn = self.gt_phases.t_start_turn
+                                t_end_turn = self.gt_phases.t_end_turn
+                                t_start_turn2 = self.gt_phases.t_start_turn2
+                                t_start_sit = self.gt_phases.t_start_sit
+                                t_end = self.gt_phases.t_end
 
-                    if plot:
-                        df_plot = self.processed_data
-                        if self.gt_phases is None:
-                            print("No phases detected, cannot plot.")
-                        else:
-                            t_start = self.gt_phases.t_start
-                            t_end_stand = self.gt_phases.t_end_stand
-                            t_start_turn = self.gt_phases.t_start_turn
-                            t_end_turn = self.gt_phases.t_end_turn
-                            t_start_turn2 = self.gt_phases.t_start_turn2
-                            t_start_sit = self.gt_phases.t_start_sit
-                            t_end = self.gt_phases.t_end
+                            totest = results.t_end - results.t_start
+                            if totest>1000: totest=totest/1000
+                            totgt = self.gt_total_gwalk
+                            if totgt>1000: totgt=totgt/1000
+                            totmanual = self.gt_total_manual
+                            if totmanual>1000: totmanual=totmanual/1000
 
-                        totest = results.t_end - results.t_start
-                        if totest>1000: totest=totest/1000
-                        totgt = self.gt_total_gwalk
-                        if totgt>1000: totgt=totgt/1000
-                        totmanual = self.gt_total_manual
-                        if totmanual>1000: totmanual=totmanual/1000
+                            if self.gt_total_manual is not None and not np.isnan(self.gt_total_manual):
+                                errormanual=np.round(totest - totmanual, 2)
+                            else:
+                                errormanual = 'none'
 
-                        if self.gt_total_manual is not None and not np.isnan(self.gt_total_manual):
-                            errormanual=np.round(totest - totmanual, 2)
-                        else:
-                            errormanual = 'none'
+                            errorgt = np.round(totest - totgt, 2)
 
-                        errorgt = np.round(totest - totgt, 2)
-
-                        fig, ax1 = plt.subplots(figsize=(10, 5))
-                        ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
-                                 label="Motion (m/s²)", color="blue", linestyle="-")
-                        ax3 = ax1.twinx()
-                        ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red",
-                                 linestyle="--")
-                        ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green",
-                                 linestyle="-.")
-                        ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple",
-                                 linestyle=":")
-                        ax3.legend(loc="lower right")
-
-                        ax1.set_xlabel("Time (s)")
-                        ax1.set_ylabel("Acceleration (m/s²)", color="blue")
-                        ax1.tick_params(axis='y', labelcolor="blue")
-
-                        if False:
-                            ax1.axvspan(t_start, t_end, color="orange", alpha=0.3, label="Total duration")
-                            ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
-
-                            ax1.axvspan(t_start_turn, t_end_turn, color="darkgreen", alpha=0.6, label="First turn")
-                            ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.6, label="Second turn")
-
-                            ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4, label="First turn - estimation")
-                            ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4, label="Second turn - estimation")
-
+                            fig, ax1 = plt.subplots(figsize=(10, 5))
+                            ax1.plot(df_plot["relative_timestamp"], df_plot["sqrt(X²+Y²+Z²)"],
+                                     label="Motion (m/s²)", color="blue", linestyle="-")
                             ax3 = ax1.twinx()
-                            ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
-                            ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
-                            ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
+                            ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red",
+                                     linestyle="--")
+                            ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green",
+                                     linestyle="-.")
+                            ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple",
+                                     linestyle=":")
+                            ax3.legend(loc="lower right")
 
-                        # if self.dataset_id == 'synergy' or self.dataset_id == 'pisa':
-                        ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2,
-                                    label="Total duration - estimation")
+                            ax1.set_xlabel("Time (s)")
+                            ax1.set_ylabel("Acceleration (m/s²)", color="blue")
+                            ax1.tick_params(axis='y', labelcolor="blue")
 
-                        if method != 'ml':
-                            ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4,
-                                        label="First turn - estimation")
-                            ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4,
-                                        label="Second turn - estimation")
-                            plt.title(f"TUG estimation, {method} approach, "
-                                      f"{self.user_id}_{self.session_id}, "
-                                      f"Est - GTmanual = {errormanual}, "
-                                      f"Est - GTwalk= {errorgt}")
+                            if False:
+                                ax1.axvspan(t_start, t_end, color="orange", alpha=0.3, label="Total duration")
+                                ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2, label="Total duration - estimation")
 
-                        else:
-                            plt.title(f"TUG estimation, {method} approach, "
-                                      f"{self.user_id}_{self.session_id}, "
-                                      f"Est - GTmanual = {errormanual}, "
-                                      f"Est - GTwalk= {errorgt}, "
-                                      f"Est - GTml = {np.round(self.error['ml'],2)}"
-                                      )
+                                ax1.axvspan(t_start_turn, t_end_turn, color="darkgreen", alpha=0.6, label="First turn")
+                                ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.6, label="Second turn")
 
-                        plt.xticks(rotation=45)
+                                ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4, label="First turn - estimation")
+                                ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4, label="Second turn - estimation")
 
-                        ax1.grid()
-                        ax1.legend(loc="upper left")
+                                ax3 = ax1.twinx()
+                                ax3.plot(df_plot["relative_timestamp"], df_plot["alpha"], label="Alpha (°)", color="red", linestyle="--")
+                                ax3.plot(df_plot["relative_timestamp"], df_plot["beta"], label="Beta (°)", color="green", linestyle="-.")
+                                ax3.plot(df_plot["relative_timestamp"], df_plot["gamma"], label="Gamma (°)", color="purple", linestyle=":")
 
-                        plt.show()
-                        plt.tight_layout()
+                            # if self.dataset_id == 'synergy' or self.dataset_id == 'pisa':
+                            ax1.axvspan(results.t_start, results.t_end, color="red", alpha=0.2,
+                                        label="Total duration - estimation")
+
+                            if method == 'labelling':
+                                ax1.axvspan(results.t_start_turn, results.t_end_turn, color="blue", alpha=0.4,
+                                            label="First turn - estimation")
+                                ax1.axvspan(results.t_start_turn2, results.t_end_turn2, color="blue", alpha=0.4,
+                                            label="Second turn - estimation")
+                                plt.title(f"TUG estimation, {method} approach, "
+                                          f"{self.user_id}_{self.session_id}, "
+                                          f"Est - GTmanual = {errormanual}, "
+                                          f"Est - GTwalk= {errorgt}")
+
+                            else:
+                                plt.title(f"TUG estimation, {method} approach, "
+                                          f"{self.user_id}_{self.session_id}, "
+                                          f"Est - GTmanual = {errormanual}, "
+                                          f"Est - GTwalk= {errorgt}, "
+                                          f"Est - GTml = {np.round(self.error['ml'],2)}"
+                                          )
+
+                            plt.xticks(rotation=45)
+
+                            ax1.grid()
+                            ax1.legend(loc="upper left")
+
+                            plt.show()
+                            plt.tight_layout()
+                            return fig
+                    else:
+                        print(f"No valid result for {self.user_id}_{self.session_id}")
+
                 else:
-                    print(f"No valid result for {self.user_id}_{self.session_id}")
+                    utils_labelling.compute_method_optimization(self, method)
 
-        else:
-            if not isinstance(self.processed_data, str):
-                utils_labelling.compute_method_optimization(self, method)
-
-    def show_tuttecose(self, method='labelling'):
-        self.plot_labelling(method=method, show_info=True)
-
-        self.plot_with_info(method=method)
-
-
-
+    def show_tuttecose(self):
+        fig = self.plot_labelling(method='labelling', show_info=False, plot=True)
+        utils_dataquality.compute_error_tests([self], method='labelling')
+        figml = utils_MLnew.plot_ml_prediction(self, error=self.error['ml'])
+        utils_labelling.add_biginfobox(figml, self)
+        print("Shown all we know about this test.")
 
 
     def data_quality_investigation(self, plot=False, method='labelling', df_tests = None):
@@ -358,7 +364,7 @@ class TUGTest:
             self.quality['visual'] = df_tests.loc[index, 'comment']
         stats = utils_dataquality.compute_test_stats(self.processed_data)
 
-        self.data_quality_stats = stats
+        self.quality['statssignal'] = stats
 
         if plot:
             _ = utils_labelling.plot_faulty_signal(self.processed_data,
@@ -581,11 +587,11 @@ class MlModel:
     def _build_strong_baseline(self, window_size, n_features):
         inp = Input(shape=(window_size, n_features))
         # multi-scale convs
-        c1 = Conv1D(64, 3, padding='same', activation='relu')(inp)
+        c1 = Conv1D(64, 8, padding='same', activation='relu')(inp) # 3, 5, 7
         c1 = BatchNormalization()(c1)
-        c2 = Conv1D(64, 5, padding='same', activation='relu')(inp)
+        c2 = Conv1D(64, 12, padding='same', activation='relu')(inp)
         c2 = BatchNormalization()(c2)
-        c3 = Conv1D(64, 7, padding='same', activation='relu')(inp)
+        c3 = Conv1D(64, 16, padding='same', activation='relu')(inp)
         c3 = BatchNormalization()(c3)
         x = Concatenate()([c1, c2, c3])  # shape: (T, 192)
         x = Dropout(0.2)(x)
@@ -594,8 +600,8 @@ class MlModel:
         x = Dropout(0.3)(x)
 
         # simple attention
-        attn = Dense(1, activation='tanh')(x)
-        attn = Activation('softmax')(attn)  # softmax along time dimension when using functional API later
+        # attn = Dense(1, activation='tanh')(x)
+        # attn = Activation('softmax')(attn)  # softmax along time dimension when using functional API later
         # Multiply attention weights and features
         out_seq = TimeDistributed(Dense(1, activation='sigmoid'))(x)
         model = Model(inp, out_seq)

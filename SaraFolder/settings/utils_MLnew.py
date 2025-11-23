@@ -4,6 +4,7 @@ from collections import Counter
 import pandas as pd
 import numpy as np
 import scipy.signal as signal
+from scipy.stats import entropy
 
 import matplotlib
 from matplotlib import pyplot as plt
@@ -56,6 +57,8 @@ def prep_data(all_tests, fold_idx=None, n_splits=5, window_size=60, stride=30, i
     elif input_type == 'magnitude_acc':
         cols = ['sqrt(X²+Y²+Z²)', 'rotRate.alpha', 'rotRate.beta',
                 'rotRate.gamma', 'alpha', 'beta', 'gamma']
+    elif input_type == 'sixaxial':
+        cols = ['acc.x', 'acc.y', 'acc.z', 'rotRate.alpha', 'rotRate.beta', 'rotRate.gamma']
 
     X_list = []
     y_list = []
@@ -218,13 +221,11 @@ def split_data(X, y, test_indices, test_index, fold_idx=None):
     return cv_results, fold_models, best_val_f1, best_fold_idx"""
 
 
-def evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indices, test_index, holdout_tests,
+def evaluate_holdout(best_model, best_scaler, X, y, test_indices, test_index, holdout_tests,
                      save=False):
     print(f"\n{'=' * 60}")
-    print(f"HOLDOUT SET EVALUATION (Best Model: Fold {best_fold_idx + 1})")
+    print(f"HOLDOUT SET EVALUATION)")
     print(f"{'=' * 60}")
-
-    best_model = fold_models[best_fold_idx]
 
     X_holdout = X[np.isin(test_index, holdout_tests)]
     y_holdout = y[np.isin(test_index, holdout_tests)]
@@ -242,6 +243,10 @@ def evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indices
     y_holdout_flat = y_holdout.reshape(-1)
     y_holdout_pred_flat = y_holdout_pred_binary.reshape(-1)
 
+    # Check for unknown or binary targets
+    if y_holdout_flat.dtype == 'object':
+        y_holdout_flat = y_holdout_flat.astype(int)
+
     holdout_acc = accuracy_score(y_holdout_flat, y_holdout_pred_flat)
     holdout_precision = precision_score(y_holdout_flat, y_holdout_pred_flat)
     holdout_recall = recall_score(y_holdout_flat, y_holdout_pred_flat)
@@ -255,7 +260,6 @@ def evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indices
 
     # Save holdout results
     holdout_results = pd.DataFrame([{
-        'best_fold': best_fold_idx + 1,
         'holdout_accuracy': holdout_acc,
         'holdout_precision': holdout_precision,
         'holdout_recall': holdout_recall,
@@ -266,7 +270,7 @@ def evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indices
     if save:
         holdout_results.to_csv(running_settings.results_all + os.sep + 'holdout_results.csv', index=False)
 
-    return fold_models, holdout_results
+    return holdout_results
 
 
 def reconstruct_from_windows_output(predictions, window_size, stride, original_length, output_steps):
@@ -370,6 +374,9 @@ def reconstruct_from_windows(predictions, window_size, stride, original_length):
         if n_features > 1:
             reconstructed[start_idx:valid_end] += predictions[window_idx, :valid_window_size]
         else:
+            #if not isinstance(predictions[0,0][0], np.int32):
+                # Transform values into int
+            #    predictions = predictions.astype(int)
             reconstructed[start_idx:valid_end] += predictions[window_idx, :valid_window_size].flatten()
             # Careful, here we are over-writing the part with stride overlap
 
@@ -428,7 +435,7 @@ def visualize_reconstruction(y_true, y_pred_windowed, y_pred_reconstructed,
     plt.show()
 
 
-def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=0):
+def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=0, dataset='all'):
     """
     Evaluate model performance at the TEST level, aggregating predictions per test.
 
@@ -476,6 +483,8 @@ def evaluate_holdout_per_test(modelObj, best_scaler, X_val, y_val, val_test_inde
                 original_length=len(original_test.processed_data)
             )
 
+            if dataset == 'matey_sanz':
+                y_val_test = y_val_test.astype(int)
             # Also reconstruct ground truth
             y_true_original, overlap_counts_true = reconstruct_from_windows(
                 predictions=y_val_test,
@@ -743,6 +752,8 @@ def evaluate_cv(modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_
     return cv_results, fold_models, best_val_f1, best_fold_idx
 
 
+
+
 def plot_ml_prediction(test, error=None):
     """
     Plot binary classification predictions with ground truth markers and sensor data.
@@ -760,6 +771,9 @@ def plot_ml_prediction(test, error=None):
     # Get the data
     df = test.processed_data
 
+    if 'mlproba_stats' not in test.quality.keys():
+        test.quality['mlproba_stats'] = probability_quality(test)
+    
     # Get ground truth start and end
     gt_indices = df[df['testBool'] == True]
     if len(gt_indices) > 0:
@@ -792,11 +806,11 @@ def plot_ml_prediction(test, error=None):
 
     ax1.set_ylabel('Prediction Probability', fontsize=12)
     ax1.set_ylim(-0.05, 1.05)
-    ax1.legend(loc='upper right')
+    ax1.legend(loc='upper left')
     ax1.grid(True, alpha=0.3)
     ax1.set_title(f'Classification Predictions, test: {test.user_id}_{test.session_id}, '
                   f'error ml: {np.round(error, 2)}, gtgwalk: {np.round(test.gt_total_gwalk,2)}, '
-                  f'gtmanual: {np.round(test.gt_total_manual,2)}'
+                  f'gtmanual: {np.round(test.gt_total_manual,2)}, '
                   f'gtml: {np.round(gtmltot,2)}', fontsize=14)
 
     # Plot 2: Binary Predictions
@@ -818,7 +832,7 @@ def plot_ml_prediction(test, error=None):
     ax2.set_ylim(-0.1, 1.1)
     ax2.set_yticks([0, 1])
     ax2.set_yticklabels(['Negative (0)', 'Positive (1)'])
-    ax2.legend(loc='upper right')
+    ax2.legend(loc='upper left')
     ax2.grid(True, alpha=0.3)
 
     # Plot 3: Sensor Data (Acceleration and Rotation)
@@ -907,15 +921,16 @@ def iteratetimebtw(estimation, test, main_threshold_ms=15000, right_threshold_ms
         'msFromStart': ['first', 'last', 'count']
     }).reset_index()
 
-    if len(true_segments) == 0:
-        if verbose:
-            print("No True intervals found.")
-        return result[['msFromStart', 'predicted_testBool']]
-
     true_segments.columns = ['group', 'start_time', 'end_time', 'count']
 
     # Segments that are shorter than 500ms are ignored and discarded
     true_segments = true_segments[(true_segments['end_time'] - true_segments['start_time']) >= 100].copy()
+
+    if len(true_segments) == 0:
+        print("No true intervals above probability threshold.")
+        t_start = result.iloc[0]['msFromStart']
+        t_end = result.iloc[-1]['msFromStart']
+        return t_start, t_end
 
     # Find the center (halfway point) of the entire test
     test_start = result['msFromStart'].min()
@@ -1051,8 +1066,12 @@ def iteratetimebtw(estimation, test, main_threshold_ms=15000, right_threshold_ms
 
 def basic_approach(processed_data):
     estimation = processed_data[processed_data['predicted_testBool'] == True]
-    msStart = estimation['msFromStart'].values[0]
-    msEnd = estimation['msFromStart'].values[-1]
+    if len(estimation) > 0:
+        msStart = estimation['msFromStart'].values[0]
+        msEnd = estimation['msFromStart'].values[-1]
+    else:
+        msStart = processed_data['msFromStart'].values[0]
+        msEnd = processed_data['msFromStart'].values[-1]
     return msStart, msEnd
 
 
@@ -1066,25 +1085,29 @@ def compute_error(msStart, msEnd, test):
 
 
 def approach_duration_estimation(test, method=''):
-    processed_data = test.processed_data
-    print("Using basic approach for duration estimation")
-    msStart, msEnd = basic_approach(processed_data)
-    error = compute_error(msStart, msEnd, test)
+    try:
+        processed_data = test.processed_data
+        print("Using basic approach for duration estimation")
+        msStart, msEnd = basic_approach(processed_data)
+        error = compute_error(msStart, msEnd, test)
 
-    if abs(error) > 30:
-        # plot_ml_prediction(test, error)
-        verbose=False
-    else:
-        verbose=False
+        if abs(error) > 30:
+            # plot_ml_prediction(test, error)
+            verbose=False
+        else:
+            verbose=False
 
-    if method == 'timebtwbool':
-        print("Using time between peaks for duration estimation")
-        estimation = processed_data[['msFromStart', 'predicted_testBool']]
+        if method == 'timebtwbool':
+            print("Using time between peaks for duration estimation")
+            estimation = processed_data[['msFromStart', 'predicted_testBool']]
 
-        msStart, msEnd = iteratetimebtw(estimation, test, main_threshold_ms=10000, right_threshold_ms=5000, verbose=verbose)
+            msStart, msEnd = iteratetimebtw(estimation, test, main_threshold_ms=10000, right_threshold_ms=5000, verbose=verbose)
 
-
-    return msStart/1000, msEnd/1000
+        return msStart/1000, msEnd/1000
+    except:
+        processed_data = test.processed_data
+        print(msStart, msEnd)
+        return processed_data['msFromStart'].values[0]/1000, processed_data['msFromStart'].values[-1]/1000
 
 
 def evaluate_duration_tests(tests_original, method):
@@ -1121,18 +1144,20 @@ def observe_performance_per_test(original_tests_fold, holdout_tests_original, me
                                           method=method, gttype='gwalk',
                                           dataset='holdout', title=modelname + '_' + method, logging=True)
 
-    all_folds_tests = []
-    for f in original_tests_fold.keys():
-        val_tests_original = original_tests_fold[f]
-        val_tests_original = evaluate_duration_tests(val_tests_original, method)
-        all_folds_tests.extend(list(val_tests_original.values()))
+    if len(original_tests_fold) > 0:
 
-    all_fold_remained = utils_dataquality.plot_tests_witherror(all_folds_tests, error_threshold=15, method='ml')
-    utils_evaluation.evaluate_results(all_folds_tests, eval_type='duration',
-                                      method=method, gttype='gwalk',
-                                      dataset='cvfolds', title=modelname + '_' + method, logging=True)
+        all_folds_tests = []
+        for f in original_tests_fold.keys():
+            val_tests_original = original_tests_fold[f]
+            val_tests_original = evaluate_duration_tests(val_tests_original, method)
+            all_folds_tests.extend(list(val_tests_original.values()))
 
-    return 0
+        all_fold_remained = utils_dataquality.plot_tests_witherror(all_folds_tests, error_threshold=30, method='ml')
+        utils_evaluation.evaluate_results(all_folds_tests, eval_type='duration',
+                                          method=method, gttype='gwalk',
+                                          dataset='cvfolds', title=modelname + '_' + method, logging=True)
+
+        return all_folds_tests
 
 
 def lopo_validation(all_tests):
@@ -1194,8 +1219,7 @@ def lopo_validation(all_tests):
 
     return split_loop, n_splits, holdout_tests_original, holdout_tests
 
-def kfold_validation(all_tests, n_splits):
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+def kfold_validation(all_tests, n_splits, holdout=False):
     n_tests = len(all_tests)
     test_indices = np.arange(n_tests)
 
@@ -1204,20 +1228,29 @@ def kfold_validation(all_tests, n_splits):
 
     unique_tests = np.unique(test_indices)
 
-    if False:
-        train_val_tests, holdout_tests = train_test_split(
-            unique_tests,
-            test_size=0, #0.15
-            random_state=42,
-            shuffle=True
-        )
+    if not holdout:
+        if False:
+            train_val_tests, holdout_tests = train_test_split(
+                unique_tests,
+                test_size=0, #0.15
+                random_state=42,
+                shuffle=True
+            )
+        else:
+            holdout_tests = []
+            train_val_tests = unique_tests
+        holdout_tests_original = {i: test for i, test in enumerate(all_tests) if i in holdout_tests}
     else:
-        holdout_tests = []
-        train_val_tests = unique_tests
-    holdout_tests_original = {i: test for i, test in enumerate(all_tests) if i in holdout_tests}
+        holdout_tests = test_indices
+        holdout_tests_original = {i: test for i, test in enumerate(all_tests) if i in holdout_tests}
+        train_val_tests = []
 
     print(f"Train+Val tests: {len(train_val_tests)}, Holdout tests: {len(holdout_tests)}")
-    split_loop = kf.split(train_val_tests)
+    if len(train_val_tests)>0:
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+        split_loop = kf.split(train_val_tests)
+    else:
+        split_loop = None
 
     return split_loop, holdout_tests_original, holdout_tests
 
@@ -1495,16 +1528,15 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
             all_test_results = pd.concat(cv_results_per_test_all, ignore_index=True)
             all_test_results.to_csv(running_settings.results_all + os.sep + 'cv_per_test_detailed.csv', index=False)
 
+        best_model = fold_models[best_fold_idx]
+        best_scaler = scalers[best_fold_idx]
         if len(holdout_tests)>0:
             # Evaluate on holdout set
-            best_model = fold_models[best_fold_idx]
-            best_scaler = scalers[best_fold_idx]
-
             test_indeces = np.arange(len(all_tests))
 
             # Evaluate on holdout set
-            fold_models, holdout_results = evaluate_holdout(best_fold_idx, best_scaler, fold_models, X, y, test_indeces,
-                                                            test_index, holdout_tests, save=False)
+            holdout_results = evaluate_holdout(best_model, best_scaler,
+                                               X, y, test_indeces, test_index, holdout_tests, save=False)
 
             # modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
             holdout_results_df, holdout_level_metrics, holdout_tests_original = evaluate_holdout_per_test(best_model,
@@ -1514,9 +1546,9 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
                                                                                                           best_fold_idx,
                                                                                                           holdout_tests_original)
 
-        observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method, modelname=model_name.strip('.h5'))
+        all_folds_tests = observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method, modelname=model_name.strip('.h5'))
 
-        return best_model
+        return best_model, best_scaler, best_fold_idx, all_folds_tests
 
     else:
         # Single model training (no CV) or loading existing model
@@ -1533,3 +1565,105 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
             modelObj.load_model(title=modelObj.model_name)
 
         return modelObj
+
+def investigate_probastats_error(all_fold_tests):
+
+    """
+    # Relate the statistics obtained from mlproba_stats to the error in test.error['ml']
+    # Find a way that we can use the predicted probabilities as a quality metric. Don't make uip random scores, use statisitcs and a deterministic approach.
+    # Use correlations and scatter plots to identify relationships.
+
+    Args:
+        all_fold_tests:
+
+    Returns:
+
+    """
+
+    qualityproba_all = utils_dataquality.get_stats_all(all_fold_tests, method='mlproba_stats')
+    error_all, indiv_error_duration = utils_dataquality.compute_error_tests(all_fold_tests, method='ml')
+
+    df = utils_dataquality.prepare_quality_error_dataframe1(qualityproba_all, error_all)
+
+
+    fig1, df = utils_dataquality.plot_error_by_quality(df, proba=True)
+
+    pass
+def investigate_predictedproba(all_fold_tests):
+    for test in all_fold_tests:
+        test.quality['mlproba_stats'] = probability_quality(test)
+
+    investigate_probastats_error(all_fold_tests)
+    return None
+
+def probability_quality(test):
+    """
+    Compute deterministic, statistically meaningful quality metrics based on
+    predicted probabilities in test.processed_data['predicted_testProba'].
+    Returns a dictionary.
+    """
+
+    df = test.processed_data
+    proba = df['predicted_testProba'].values
+
+    # Safety filtering
+    if len(proba) == 0:
+        return {"error": "empty_signal"}
+
+    stats = {}
+
+    # --- (1) Probability distribution overall ---
+    stats["mean"] = float(np.mean(proba))
+    stats["median"] = float(np.median(proba))
+    stats["std"] = float(np.std(proba))
+    stats["min"] = float(np.min(proba))
+    stats["max"] = float(np.max(proba))
+    stats["autocorr_180lag"] = float(pd.Series(proba).autocorr(lag=180))
+    stats["autocorr_60lag"] = float(pd.Series(proba).autocorr(lag=60))
+    stats["autocorr_30lag"] = float(pd.Series(proba).autocorr(lag=30))
+
+    # --- (3) Probability entropy (higher = worse) ---
+    # Convert proba to binary distribution [p, 1-p]
+    eps = 1e-12
+    entropy_vals = entropy(np.vstack([proba + eps, 1 - proba + eps]).T, base=2, axis=1)
+    stats["mean_entropy"] = float(np.mean(entropy_vals))
+
+    # --- (6) Smoothness of probability time series ---
+    # Higher variance of derivative = noisier model
+    deriv = np.diff(proba)
+    stats["derivative_std"] = float(np.std(deriv))
+
+    return stats
+
+
+def holdout_external_testing(model, scaler, best_fold, input_type, output_steps, all_tests_matey):
+
+    modelcomments = running_settings.model_comments
+
+    X, y, test_index = prep_data(all_tests_matey, stride=running_settings.parameters['stride'],
+                                 input_type=input_type, output_steps=output_steps)
+
+    split_loop, holdout_tests_original, holdout_tests = kfold_validation(all_tests_matey, n_splits=None, holdout=True)
+
+    if len(holdout_tests) > 0:
+        # Evaluate on holdout set
+        test_indeces = np.arange(len(all_tests_matey))
+
+        # Evaluate on holdout set
+        holdout_results = evaluate_holdout(model, scaler, X, y, test_indeces,
+                                                        test_index, holdout_tests, save=False)
+
+        # modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
+        holdout_results_df, holdout_level_metrics, holdout_tests_original = evaluate_holdout_per_test(model, scaler, X, y,
+                                                                                                      test_index,
+                                                                                                      holdout_tests,
+                                                                                                      best_fold,
+                                                                                                      holdout_tests_original,
+                                                                                                      dataset='matey_sanz')
+
+
+        all_folds_tests = observe_performance_per_test([], holdout_tests_original,
+                                                       method='ml',
+                                                       modelname=model.model_name.strip('.h5'))
+
+    return None

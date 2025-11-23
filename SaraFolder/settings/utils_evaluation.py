@@ -103,10 +103,10 @@ def evaluate_results(all_tests, eval_type, method, dataset, gttype, title, loggi
     elif dataset == 'synergy':
         res_path = running_settings.results_synergy + \
                    os.sep + 'results' + title + '.txt'
-    elif dataset:
+    elif dataset == 'pisa':
         res_path = running_settings.results_pisatug + \
                    os.sep + 'results' + title + '.txt'
-    elif dataset == 'all':
+    elif dataset == 'all' or 'cvfolds':
         res_path = running_settings.results_all + \
                    os.sep + 'results' + title + '.txt'
 
