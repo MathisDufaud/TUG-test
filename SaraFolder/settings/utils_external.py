@@ -24,8 +24,8 @@ def load_mateysanz(tests, subject_info):
         dev_pos = k.split('_')[-1]
         test = classes.TUGTest(test_id=None,
                                session_id = session_id,
-                               user_id = user_id + '_' + 'matey_' + dev_pos,
-                               dataset_id = 'matey_' + dev_pos)
+                               user_id = user_id + '_' + 'matey' + dev_pos,
+                               dataset_id = 'matey' + dev_pos)
 
         context = 'supervised'
         test.context = context
@@ -56,16 +56,14 @@ def load_data(dataset_id='matey_sanz', context='supervised'):
     # Load Matey-Sanz
     if dataset_id == 'matey_sanz':
         if 'matey_sanz_tests.pickle' in os.listdir(running_settings.data_synpisa):
-            with open(running_settings.data_synpisa + os.sep + 'matey_sanz_tests.pickle', 'rb') as handle:
+            with open(running_settings.data_mateysanz + os.sep + 'matey_sanz_tests.pickle', 'rb') as handle:
                 all_tests = pickle.load(handle)
         else:
             tests = data_loading.load_data(path=running_settings.data_mateysanz)
             subject_info = data_loading.load_subjects_info(path=os.path.join(running_settings.data_mateysanz, 'subjects_info.csv'))
             all_tests = load_mateysanz(tests, subject_info)
 
-            with open(running_settings.data_synpisa + os.sep + 'matey_sanz_tests.pickle', 'wb') as handle:
+            with open(running_settings.data_mateysanz + os.sep + 'matey_sanz_tests.pickle', 'wb') as handle:
                 pickle.dump(all_tests, handle)
-
-
 
     return all_tests

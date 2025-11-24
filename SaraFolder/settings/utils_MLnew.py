@@ -846,12 +846,13 @@ def plot_ml_prediction(test, error=None):
     ax3_right = ax3.twinx()
 
     # Orientation angles
-    ax3_right.plot(df['msFromStart'], df['alpha'],
-                   label='Alpha (°)', color='red', linestyle='--', linewidth=2)
-    ax3_right.plot(df['msFromStart'], df['beta'],
-                   label='Beta (°)', color='green', linestyle='-.', linewidth=2)
-    ax3_right.plot(df['msFromStart'], df['gamma'],
-                   label='Gamma (°)', color='purple', linestyle=':', linewidth=2)
+    if 'alpha' in df.columns:
+        ax3_right.plot(df['msFromStart'], df['alpha'],
+                       label='Alpha (°)', color='red', linestyle='--', linewidth=2)
+        ax3_right.plot(df['msFromStart'], df['beta'],
+                       label='Beta (°)', color='green', linestyle='-.', linewidth=2)
+        ax3_right.plot(df['msFromStart'], df['gamma'],
+                       label='Gamma (°)', color='purple', linestyle=':', linewidth=2)
 
     # Rotation rates
     ax3_right.plot(df['msFromStart'], df['rotRate.alpha'],
@@ -1144,8 +1145,9 @@ def observe_performance_per_test(original_tests_fold, holdout_tests_original, me
                                           method=method, gttype='gwalk',
                                           dataset='holdout', title=modelname + '_' + method, logging=True)
 
-    if len(original_tests_fold) > 0:
+        all_holdout_remained = utils_dataquality.plot_tests_witherror(holdout_tests_original.values(), error_threshold=4, method='ml')
 
+    if len(original_tests_fold) > 0:
         all_folds_tests = []
         for f in original_tests_fold.keys():
             val_tests_original = original_tests_fold[f]

@@ -79,15 +79,12 @@ def define_res_gts(all_tests, gttype, method):
             if np.isnan(test.gt_total_gwalk) or test.gt_total_gwalk is None:
                 print("Missing gwalk GT, using manual GT instead")
                 manualgt += 1
-                # warnings.warn(f"Missing gwalk GT for test {str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]}", UserWarning)
                 all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
         else:
             if test.gt_phases.t_end is not None:
                 all_gts[
                     str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_phases.to_dict()
-            # else:
-            #     elif gttype == 'manual':
-            #         all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
+
     print(f"Total manual GT used: {manualgt}")
     return all_results, all_gts
 
