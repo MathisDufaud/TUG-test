@@ -808,7 +808,7 @@ def compute_method(test, method, show_info=False):
     quality_0 = utils_dataquality.quality_assessment(test.processed_data, test.dataset_id)
     test.quality['basic'] = quality_0
 
-    if method == 'labelling':
+    if method == 'labelling' and 'matey' not in test.dataset_id:
         test, quality_1, res_stats = labelling_method(test, show_info=show_info)
         test.quality[method] = quality_1
         test.quality[method + '_stats'] = res_stats

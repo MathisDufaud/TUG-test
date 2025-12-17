@@ -10,7 +10,7 @@ matplotlib.use('TkAgg')
 
 if __name__ == "__main__":
 
-    all_test_extra = utils_external.load_data()
+    #all_test_extra = utils_external.load_data()
     all_tests = utils_parkapp.load_everything()
 
     if False:
@@ -29,6 +29,10 @@ if __name__ == "__main__":
 
         utils_evaluation.evaluate_results(all_tests, eval_type='duration',
                                           method=method, gttype='gwalk', dataset='all', title='all'+method+'_help', logging=True)
+
+        error_all, indiv_error_duration = utils_dataquality.compute_error_tests(all_tests, method='labelling')
+        utils_dataquality.compare_error_all_indiv(error_all, indiv_error_duration)
+        utils_dataquality.plot_tests_witherror(all_tests, error_threshold=15, method='labelling')
 
     # Parameter optimization
     if True:

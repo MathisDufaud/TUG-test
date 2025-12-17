@@ -341,6 +341,8 @@ def plot_icc(icc_s, icctype='ICC2'):
         x = x_positions_parts[i]
         y = icc_sorted_parts[i]
         yerr_low = y - ci_lower_sorted_parts[i]
+        if yerr_low < 0:
+            yerr_low = 0
         yerr_up = ci_upper_sorted_parts[i] - y
         n_test = tests_sorted[i]
         color = test_colors[n_test]

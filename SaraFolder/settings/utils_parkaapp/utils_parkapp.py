@@ -298,6 +298,8 @@ def build_general_df(all_tests):
     df_general = pd.DataFrame(columns=['Participant', 'Session', 'samples', 'duration', 'durationGTg', 'durationGTm'])
     for test in all_tests:
         participant = test.user_id
+        if 'matey' in participant:
+            participant = participant.split('_')[0]
         session = test.session_id
         n_samples = len(test.raw_data)
         df = test.raw_data
@@ -382,7 +384,7 @@ def tugt_icc(all_tests):
         icc_result = intraclass_corr(data=df_filtered,
                                      targets='Participant',
                                      raters='Session',
-                                     ratings='durationGT')
+                                     ratings='durationGTg')
 
         icc_2_1 = icc_result[icc_result['Type'] == 'ICC2']
         participants = df_filtered['Participant'].nunique()

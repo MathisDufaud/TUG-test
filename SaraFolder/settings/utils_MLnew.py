@@ -829,7 +829,7 @@ def plot_ml_prediction(test, error=None):
         ax2.axvspan(test.results['ml']['t_start']*1000, test.results['ml']['t_end']*1000, alpha=0.2, color='red', label='Estimation Region')
 
     ax2.set_ylabel('Predicted Class', fontsize=12)
-    ax2.set_ylim(-0.1, 1.1)
+    ax2.set_ylim(-0.1, 1.35)
     ax2.set_yticks([0, 1])
     ax2.set_yticklabels(['Negative (0)', 'Positive (1)'])
     ax2.legend(loc='upper left')
@@ -924,7 +924,7 @@ def iteratetimebtw(estimation, test, main_threshold_ms=15000, right_threshold_ms
 
     true_segments.columns = ['group', 'start_time', 'end_time', 'count']
 
-    # Segments that are shorter than 500ms are ignored and discarded
+    # Segments that are shorter than XXms are ignored and discarded
     true_segments = true_segments[(true_segments['end_time'] - true_segments['start_time']) >= 100].copy()
 
     if len(true_segments) == 0:
@@ -1043,11 +1043,16 @@ def iteratetimebtw(estimation, test, main_threshold_ms=15000, right_threshold_ms
         print(f"  Original True predictions: {estimation['predicted_testBool'].sum()}")
         print(f"  Filtered True predictions: {final_result['predicted_testBool'].sum()}")
         print(f"  Intervals kept: {true_segments['keep'].sum()}/{len(true_segments)}")
-
         if t_start is not None and t_end is not None:
             ax1 = fig.axes[0]
             ax2 = fig.axes[1]
             ax3 = fig.axes[2]
+            # Add dark green line for final predictions
+            true_predictions = final_result[final_result['predicted_testBool'] == 1]
+            if len(true_predictions) > 0:
+                ax2.scatter(true_predictions['msFromStart'],
+                            [1.2] * len(true_predictions),
+                            color='darkgreen', s=10, alpha=0.6, label='Final Predictions', marker='|')
             ax1.axvline(x=t_start, color='red', linestyle='--', linewidth=2, label='Estimated Start')
             ax1.axvline(x=t_end, color='red', linestyle='--', linewidth=2, label='Estimated End')
             ax2.axvline(x=t_start, color='red', linestyle='--', linewidth=2, label='Estimated Start')
@@ -1060,7 +1065,6 @@ def iteratetimebtw(estimation, test, main_threshold_ms=15000, right_threshold_ms
             plt.show()
         else:
             print("No True predictions remain after filtering.")
-
 
     return t_start, t_end
 
@@ -1092,9 +1096,9 @@ def approach_duration_estimation(test, method=''):
         msStart, msEnd = basic_approach(processed_data)
         error = compute_error(msStart, msEnd, test)
 
-        if abs(error) > 30:
+        if abs(error) > 5:
             # plot_ml_prediction(test, error)
-            verbose=False
+            verbose=True
         else:
             verbose=False
 
@@ -1107,6 +1111,7 @@ def approach_duration_estimation(test, method=''):
         return msStart/1000, msEnd/1000
     except:
         processed_data = test.processed_data
+        print(f"Issues with normal approaches, taking first and last raw sample. {test.user_id + '_' + str(test.session_id)}")
         print(msStart, msEnd)
         return processed_data['msFromStart'].values[0]/1000, processed_data['msFromStart'].values[-1]/1000
 
@@ -1114,6 +1119,8 @@ def approach_duration_estimation(test, method=''):
 def evaluate_duration_tests(tests_original, method):
     for test_id, test in tests_original.items():
         print(f"\nEvaluating duration for Test ID: {test_id}")
+        if test.user_id + '_' + str(test.session_id) == '2_parkapp_8' or test.user_id + '_' + str(test.session_id) == '4_parkapp_8' or test.user_id + '_' + str(test.session_id) == '12_parkapp_1':
+            print("to check better here")
 
         if test.processed_data.shape[0] > 0:
             msStart, msEnd = approach_duration_estimation(test, method='timebtwbool')

@@ -599,10 +599,6 @@ class MlModel:
         x = Bidirectional(LSTM(64, return_sequences=True))(x)
         x = Dropout(0.3)(x)
 
-        # simple attention
-        # attn = Dense(1, activation='tanh')(x)
-        # attn = Activation('softmax')(attn)  # softmax along time dimension when using functional API later
-        # Multiply attention weights and features
         out_seq = TimeDistributed(Dense(1, activation='sigmoid'))(x)
         model = Model(inp, out_seq)
         return model

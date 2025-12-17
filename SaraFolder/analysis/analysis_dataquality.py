@@ -1,6 +1,7 @@
 import numpy as np
 
-from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, running_settings, utils_dataquality
+from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, running_settings, utils_dataquality, \
+    utils_external
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 import matplotlib
 matplotlib.use('TkAgg')
@@ -16,11 +17,14 @@ if __name__ == "__main__":
     import matplotlib
     matplotlib.use('TkAgg')
     all_tests = utils_parkapp.load_everything()
+    #all_test_extra = utils_external.load_data()
 
     if False:
         all_parkapp_skipped = utils_parkapp.load_all_tests_skipped(dataset_id ='parkapp', context='supervised')
 
-    if False:
+    if True:
+        #all_tests_extra = utils_dataquality.observe_groundtruth(all_test_extra)
+
         all_tests = utils_dataquality.observe_groundtruth(all_tests)
 
     if False:

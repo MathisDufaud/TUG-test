@@ -886,10 +886,10 @@ def plot_tests_witherror(all_tests, error_threshold, method):
     all_tests_left = []
     for test in all_tests:
         if abs(test.error[method]) > error_threshold:
-            print(f"Error higher than {error_threshold}. Absolute error: {np.round(abs(test.error[method]),2)}")
-            if False:
-                test.plot_labelling(method=method, plot=True, show_info=True)
-            if True:
+            print(f"Error higher than {error_threshold}. Absolute error: {np.round(abs(test.error[method]),2)}, {test.user_id}_{test.session_id}")
+            if method == 'labelling':
+                test.plot_labelling(method=method, plot=True, show_info=False)
+            if method == 'ml':
                 utils_MLnew.plot_ml_prediction(test, test.error[method])
         else:
             all_tests_left.append(test)
@@ -1985,7 +1985,6 @@ def investigate_tests_comments(all_tests, df_tests):
 
 def plot_gts(gt_gwalk, gt_manual):
 
-
     diffs = {}
     for key in gt_gwalk.keys():
         if gt_gwalk[key] is not None and gt_manual[key] is not None and gt_manual[key] is not np.nan:
@@ -1996,6 +1995,8 @@ def plot_gts(gt_gwalk, gt_manual):
             if gtm > 500:
                 gtm = gtm/500
             diffs[key] = gtg - gtm
+            if abs(diffs[key]) > 5:
+                print("Large diff in " + key + ": " + str(diffs[key]))
 
     fig = plt.figure(figsize=(10, 6))
     ax = fig.add_subplot(111)
@@ -2155,8 +2156,3 @@ def observe_groundtruth(all_tests):
     plot_gts(gt_gwalk, gt_manual)
 
     return tests_gwalk
-
-
-
-
-    return None

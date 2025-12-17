@@ -10,7 +10,7 @@ matplotlib.use('TkAgg')
 
 if __name__ == "__main__":
     all_tests = utils_parkapp.load_everything()
-    all_tests_matey = utils_external.load_data()
+    #all_tests_matey = utils_external.load_data()
 
     # Set up csv with new manual start and end times
     if True:
@@ -28,10 +28,11 @@ if __name__ == "__main__":
                                     load_existing=True
                                     )
 
-    utils_MLnew.holdout_external_testing(model, scaler, best_fold,
-                                         input_type='sixaxial',
-                                         output_steps=0,
-                                         all_tests_matey=all_tests_matey)
+    if False:
+        utils_MLnew.holdout_external_testing(model, scaler, best_fold,
+                                             input_type='sixaxial',
+                                             output_steps=0,
+                                             all_tests_matey=all_tests_matey)
 
     if False:
         utils_MLnew.investigate_predictedproba(all_fold_tests)
