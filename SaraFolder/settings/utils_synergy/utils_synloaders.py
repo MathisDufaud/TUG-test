@@ -1,8 +1,6 @@
 import os
 import sys
 
-import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -16,37 +14,58 @@ def load_syntests(dataset_id):
 
 def overview_general(df_general, all_tests, resultspath, logging, plot):
     if plot:
-        utils_plots.plot_tugtoverview(df_general, image_path=resultspath.replace('.txt', '.jpg'))
+        utils_plots.plot_tugtoverview(df_general, image_path=resultspath.replace('.md', '.jpg'))
 
     if logging:
         lg = classes.Logger(resultspath)
         sys.stdout = lg
 
-    print("Original amount of tests: ", len(all_tests))
+    print("Original amount of tests: ", len(all_tests)) 
+    print("\n")
     print("Remaining tests for analysis: ", len(all_tests))
-    print("# Participants: ", df_general['Participant'].nunique())
+    print("\n")
+    print("Participants: ", df_general['participant'].nunique())
+    print("\n")
     print("Average frequency (Hz) samples/seconds: ",
           round((df_general['samples'] / df_general['duration']).mean(), 2))
-    print("Average # test per participant: ", df_general.groupby('Participant').size().mean())
-    print("Min # test per participant: ", df_general.groupby('Participant').size().min())
-    print("Max # test per participant: ", df_general.groupby('Participant').size().max())
-    print("Std # test per participant: ", round(df_general.groupby('Participant').size().std(), 2))
+    print("\n")
+    print("Average # test per participant: ", df_general.groupby('participant').size().mean())
+    print("\n")
+    print("Min amount of test per participant: ", df_general.groupby('participant').size().min())
+    print("\n")
+    print("Max amount of test per participant: ", df_general.groupby('participant').size().max())
+    print("\n")
+    print("Std amount of test per participant: ", round(df_general.groupby('participant').size().std(), 2))
+    print("\n")
     print("Average test duration (s) (raw): ", round(df_general['duration'].mean(), 2))
+    print("\n")
     print("Min test duration (s) (raw): ", round(df_general['duration'].min(), 2))
+    print("\n")
     print("Max test duration (s) (raw): ", round(df_general['duration'].max(), 2))
+    print("\n")
     print("Std test duration (s) (raw): ", round(df_general['duration'].std(), 2))
+    print("\n")
     print("Average test duration (s) (GT manual): ", round(df_general['durationGTm'].mean(), 2))
+    print("\n")
     print("Min test duration (s) (GT manual): ", round(df_general['durationGTm'].min(), 2))
+    print("\n")
     print("Max test duration (s) (GT manual): ", round(df_general['durationGTm'].max(), 2))
+    print("\n")
     print("Std test duration (s) (GT manual): ", round(df_general['durationGTm'].std(), 2))
+    print("\n")
     print("Average test duration (s) (GT gwalk): ", round(df_general['durationGTg'].mean(), 2))
+    print("\n")
     print("Min test duration (s) (GT gwalk): ", round(df_general['durationGTg'].min(), 2))
+    print("\n")
     print("Max test duration (s) (GT gwalk): ", round(df_general['durationGTg'].max(), 2))
+    print("\n")
     print("Std test duration (s) (GT gwalk): ", round(df_general['durationGTg'].std(), 2))
+    print("\n")
 
     if logging:
         lg.stop_logging()
         sys.stdout = sys.__stdout__
+
 def tugt_overview_synergy(all_tests, logging):
     df_general = utils_parkapp.build_general_df(all_tests)
 
@@ -55,29 +74,32 @@ def tugt_overview_synergy(all_tests, logging):
 
     return None
 
-def overview_total(all_tests_parkapp, all_tests_pisa, all_tests_synergy, resultspath, title):
-    lg = classes.Logger(resultspath + os.sep + 'overview'+title+'.txt')
+def overview_total(all_tests, resultspath, title):
+
+    lg = classes.Logger(resultspath + os.sep + 'overview'+title+'.md')
     sys.stdout = lg
-    print("ALL TESTS (parkapp, pisa, synergy")
-    df_general = utils_parkapp.build_general_df(np.concatenate([all_tests_parkapp, all_tests_pisa, all_tests_synergy]))
+    print("# ALL TESTS (parkapp, pisa + pisa new1, synergy old0 + synergy new1)")
+    df_general = utils_parkapp.build_general_df(all_tests)
     overview_general(df_general, df_general, resultspath=resultspath, logging=False, plot=True)
+    print("-------")
 
-    print("\n PARK APP TESTS #########################################")
-    df_general = utils_parkapp.build_general_df(all_tests_parkapp)
-    overview_general(df_general, df_general, resultspath=resultspath, logging=False, plot=False)
+    print("\n # PARK APP TESTS #########################################")
+    df_parkapp= df_general[df_general['dataset']=='parkapp']
+    overview_general(df_parkapp, df_parkapp, resultspath=resultspath, logging=False, plot=False)
+    
+    print("-------")
 
-    print("\n PISA TESTS #########################################")
-    df_general = utils_parkapp.build_general_df(all_tests_pisa)
-    overview_general(df_general, df_general, resultspath=resultspath, logging=False, plot=False)
+    print("\n # PISA TESTS #########################################")
+    df_pisa = df_general[df_general['dataset']=='pisa']
+    overview_general(df_pisa, df_pisa, resultspath=resultspath, logging=False, plot=False)
 
-    print("\n SYNERGY TESTS #########################################")
-    df_general = utils_parkapp.build_general_df(all_tests_synergy)
-    overview_general(df_general, df_general, resultspath=resultspath, logging=False, plot=False)
-
+    print("-------")
+    print("\n # SYNERGY TESTS")
+    df_syn = df_general[df_general['dataset']=='synergy']
+    overview_general(df_syn, df_syn, resultspath=resultspath, logging=False, plot=False)
     lg.stop_logging()
     sys.stdout = sys.__stdout__
 
-    all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp]))
     checkgts(all_tests)
     return None
 
@@ -94,7 +116,7 @@ def checkgts(all_tests):
                 gt=gt*1000
             gwalk_gt.append(gt)
 
-        if not np.isnan(test.gt_total_manual):
+        if test.gt_total_manual != None:
             gt = test.gt_total_manual
             if gt<1000:
                 gt=gt*1000

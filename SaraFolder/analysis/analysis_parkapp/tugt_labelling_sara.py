@@ -1,7 +1,7 @@
 from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 import matplotlib
-matplotlib.use('TkAgg')
+
 
 if __name__ == "__main__":
     # Loading data

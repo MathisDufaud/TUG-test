@@ -15,7 +15,7 @@ from keras.layers import Conv1D, Bidirectional, LSTM, TimeDistributed, Dense, Dr
 from SaraFolder.settings import utils_plots, running_settings, utils_MLnew
 
 import matplotlib
-matplotlib.use('TkAgg')
+
 
 from dataclasses import dataclass, field
 from datetime import datetime

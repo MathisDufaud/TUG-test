@@ -4,8 +4,10 @@ from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, 
     utils_external
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+
+from SaraFolder.settings.utils_synergy import utils_synloaders
+
 plt.ion()
 
 
@@ -14,34 +16,30 @@ plt.ion()
 # 2) Park App signals are waay more noisy than the Synergy / Pisa. That is challenging for the LSTM, not for the french intern work
 
 if __name__ == "__main__":
-    import matplotlib
-    matplotlib.use('TkAgg')
     all_tests = utils_parkapp.load_everything()
     #all_test_extra = utils_external.load_data()
-
-    if False:
-        all_parkapp_skipped = utils_parkapp.load_all_tests_skipped(dataset_id ='parkapp', context='supervised')
-
-    if True:
-        #all_tests_extra = utils_dataquality.observe_groundtruth(all_test_extra)
-
-        all_tests = utils_dataquality.observe_groundtruth(all_tests)
-
-    if False:
-        utils_dataquality.smoothing_investigation(all_tests_pisa)
-
-    if False:
-        utils_parkapp.tugt_overview_parkapp(all_tests, logging=False)
-
-    if False:
-        method = 'labelling' # darioalgo or labelling
-        utils_labelling.labelling_acrossall(all_tests, method=method)
-        utils_dataquality.observe_qualityvariable(all_tests)
 
     if False:
         # Function to track comments for each test
         df_tests = utils_dataquality.observesingletests(all_tests, method='labelling', title='testssupervised_manualmsstartend_new.csv') # testssupervised_comments.csv'
         # utils_dataquality.investigate_tests_comments(all_tests, df_tests)
+        # All tests overview:
+        utils_synloaders.overview_total(all_tests, resultspath=running_settings.results_all, title='overviewalldatasets')
+
+    if False:
+        all_tests = utils_dataquality.observe_groundtruth(all_tests)
+        utils_synloaders.overview_total(all_tests, resultspath=running_settings.results_all, title='overviewalldatasets')
+
+    if False:
+        all_parkapp_skipped = utils_parkapp.load_all_tests_skipped(dataset_id ='parkapp', context='supervised')
+
+    if False:
+        utils_dataquality.smoothing_investigation(all_tests_pisa)
+
+    if False:
+        method = 'labelling' # darioalgo or labelling
+        utils_labelling.labelling_acrossall(all_tests, method=method)
+        utils_dataquality.observe_qualityvariable(all_tests)
 
     if True:
         utils_dataquality.quality_error(all_tests)

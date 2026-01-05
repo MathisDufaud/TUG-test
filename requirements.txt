@@ -1,0 +1,9 @@
+beautifulsoup4==4.14.3
+debugpy==1.8.18
+matplotlib==3.10.8
+matplotlib-inline==0.2.1
+pandas==2.3.3
+pingouin==0.5.5
+plotly==6.5.0
+reportlab==4.4.6
+seaborn==0.13.2

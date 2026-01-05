@@ -12,7 +12,6 @@ from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from sklearn.preprocessing import StandardScaler
 
-matplotlib.use('TkAgg')
 from SaraFolder.settings import classes, utils_darioalgo, running_settings, utils_evaluation, utils_plots, \
     utils_dataquality
 from SaraFolder.settings.utils_parkaapp import utils_parkapp

@@ -6,7 +6,7 @@ from SaraFolder.settings.utils_parkaapp import utils_parkapp
 from SaraFolder.settings.utils_synergy import utils_synloaders
 
 import matplotlib
-matplotlib.use('TkAgg')
+
 
 if __name__ == "__main__":
     all_tests = utils_parkapp.load_everything()

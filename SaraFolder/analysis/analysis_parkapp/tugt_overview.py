@@ -1,7 +1,7 @@
 from SaraFolder.settings import utils_plots
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 import matplotlib
-matplotlib.use('TkAgg')
+
 
 if __name__ == "__main__":
     # 406 motion and orientation files

@@ -8,7 +8,6 @@ from scipy.stats import pearsonr, linregress, spearmanr
 import numpy as np
 from scipy.signal import find_peaks
 
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 plt.ion()
 from SaraFolder.settings import running_settings, utils_labelling, utils_evaluation, utils_MLnew
@@ -1977,14 +1976,7 @@ def plot_smoothing_frequency(alpha, alpha_filtered, beta, beta_filtered, magnitu
     return None
 
 
-def investigate_tests_comments(all_tests, df_tests):
-    print(1)
-    # What do I do here with this now
-    return None
-
-
-def plot_gts(gt_gwalk, gt_manual):
-
+def compute_diffs(gt_gwalk, gt_manual):
     diffs = {}
     for key in gt_gwalk.keys():
         if gt_gwalk[key] is not None and gt_manual[key] is not None and gt_manual[key] is not np.nan:
@@ -1997,6 +1989,11 @@ def plot_gts(gt_gwalk, gt_manual):
             diffs[key] = gtg - gtm
             if abs(diffs[key]) > 5:
                 print("Large diff in " + key + ": " + str(diffs[key]))
+    return diffs
+
+
+def plot_gts(gt_gwalk, gt_manual):
+    diffs = compute_diffs(gt_gwalk, gt_manual)
 
     fig = plt.figure(figsize=(10, 6))
     ax = fig.add_subplot(111)
@@ -2007,6 +2004,7 @@ def plot_gts(gt_gwalk, gt_manual):
     plt.xticks(rotation=90)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
+    plt.savefig(running_settings.figures_all + os.sep + 'ground_truth_differences.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     # Prepare data: use gt_gwalk if available, otherwise gt_manual
@@ -2119,7 +2117,7 @@ def plot_gts(gt_gwalk, gt_manual):
                ncol=2, frameon=False, fontsize=11)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.savefig('ground_truth_boxplot.png', dpi=300, bbox_inches='tight')
+    plt.savefig(running_settings.figures_all + os.sep + 'ground_truth_boxplot.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     print(f"Total samples - Synergy: {len(data_by_dataset['synergy'])}, "

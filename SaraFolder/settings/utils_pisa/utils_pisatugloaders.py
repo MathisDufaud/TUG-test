@@ -7,7 +7,6 @@ import os
 import matplotlib
 from pingouin import intraclass_corr
 
-matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 plt.ion()
 from SaraFolder.settings import running_settings, classes, utils_plots, utils_dataquality
@@ -330,8 +329,6 @@ def twitching_orientationalpha(df_orientation):
         # Make a copy to avoid modifying the original dataframe
         df = df_orientation.copy()
 
-        # Ensure correct data types
-        df['msFromStart'] = df['msFromStart'].astype(int)
         df['orA'] = df['orA'].astype(float)
         df['orB'] = df['orB'].astype(float)
         df['orG'] = df['orG'].astype(float)
@@ -389,11 +386,24 @@ def twitching_orientationalpha(df_orientation):
 
     return df
 
+def fix_msfromstart(df): 
+    if df.shape[0]>0:
+        if isinstance(df['msFromStart'][0], str):
+            df['msFromStart'] = pd.to_datetime(df['msFromStart'])
+            # df['msFromStart'] = (df['msFromStart'] - df['msFromStart'].iloc[0]).dt.total_seconds() * 1000
+            t0 = df['msFromStart'].iloc[0]
+            df['msFromStart'] = (
+                (df['msFromStart'] - t0)
+                .dt.total_seconds()
+                .mul(1000)
+                .astype('int64')
+            )
+    return df
 
 def load_test(path, test_id, df_tug_ref):
     tests = []
     participant = path.split(os.sep)[-1].split("_")[1]
-    if int(participant) < 10:
+    if int(participant) < 14:
         unique_tests = np.unique([f.split("tug")[1].split("_")[0] for f in os.listdir(path) if f.endswith(".csv")])
         dataset = 'synergy'
     else:
@@ -406,21 +416,28 @@ def load_test(path, test_id, df_tug_ref):
         motion = path + os.sep + 'tug' + t + '_motion.csv'
         orientation = path + os.sep + 'tug' + t + '_orientation.csv'
 
+        df_tug_test = df_tug_ref[(df_tug_ref['tugId'] == int(t))]
+        if len(df_tug_test) == 0:
+            df_tug_test = df_tug_ref[(df_tug_ref['tugKey'] == int(t))]
+        if df_tug_test.shape[0] == 0:
+            print("No reference data found for test ", t)
+            continue
         if os.path.exists(motion) and os.path.exists(orientation):
             test = classes.TUGTest(test_id = test_id,
                                    session_id = int(t),
                                    user_id = str(int(participant)) + '_' + dataset,
                                    dataset_id = dataset)
-            context = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['homeClinic'].values[0]
+            
+            context = df_tug_test['homeClinic'].values[0]
             if context == 'home':
                 context = 'unsupervised'
             else:
                 context = 'supervised'
             test.context = context
 
-            test.gt_total_gwalk = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['GWALKReferenceMs'].values[0]
-            if df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] is not None and df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0] is not None:
-                test.gt_total_manual = df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefEndtMs'].values[0] - df_tug_ref[(df_tug_ref['tugId'] == int(t))]['manualRefStartMs'].values[0]
+            test.gt_total_gwalk = df_tug_test['GWALKReferenceMs'].values[0]
+            if df_tug_test['manualRefEndtMs'].values[0] is not None and df_tug_test['manualRefStartMs'].values[0] is not None:
+                test.gt_total_manual = df_tug_test['manualRefEndtMs'].values[0] - df_tug_test['manualRefStartMs'].values[0]
             else:
                 test.gt_total_manual = None
 
@@ -434,7 +451,8 @@ def load_test(path, test_id, df_tug_ref):
                 df_orientation = df_orientation.sort_values('msFromStart')
 
                 df_merged = pd.merge(df_motion, df_orientation, on='msFromStart', how='outer').sort_values('msFromStart').reset_index(drop=True)
-
+                if int(participant) >= 11 and int(participant) <= 14:
+                    df_merged = fix_msfromstart(df_merged)
                 test.raw_data = df_merged
                 # test.processed_data = process_data(df_merged)
                 # # Remove nan rows
@@ -557,18 +575,20 @@ def resample60(df_raw):
 
 
 def smoothalphabeta(df_final, cutoff=1, order=8, btype='low', plot=False):
-    alpha_filtered, beta_filtered = utils_dataquality.explore_data_smoothing(df_final,
-                                                                             cutoff=cutoff,
-                                                                             order=order,
-                                                                             btype=btype,
-                                                                             plot=plot)
-    df_final['alpha'] = alpha_filtered
-    df_final['beta'] = beta_filtered
+    try:
+        alpha_filtered, beta_filtered = utils_dataquality.explore_data_smoothing(df_final,
+                                                                                cutoff=cutoff,
+                                                                                order=order,
+                                                                                btype=btype,
+                                                                                plot=plot)
+        df_final['alpha'] = alpha_filtered
+        df_final['beta'] = beta_filtered
+    except Exception as e:
+        print("Smoothing alpha and beta failed:", str(e))
     return df_final
 
 
 def process_data(df_raw):
-
     if len(df_raw) > 0:
         if not 'relative_timestamp' in df_raw.columns:
             df_raw['relative_timestamp'] = pd.to_timedelta(df_raw['msFromStart'], unit='milliseconds').dt.total_seconds()

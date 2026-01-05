@@ -4,7 +4,6 @@ import scipy.signal as signal
 import matplotlib
 from matplotlib import pyplot as plt
 
-matplotlib.use('TkAgg')
 from SaraFolder.settings import classes, utils_darioalgo, running_settings, utils_dataquality
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 

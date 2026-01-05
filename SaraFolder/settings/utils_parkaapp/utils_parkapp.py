@@ -6,7 +6,6 @@ import os
 import glob
 
 import matplotlib
-matplotlib.use('TkAgg')
 import pickle
 
 from matplotlib import pyplot as plt
@@ -295,7 +294,7 @@ def load_groundtruth_dict():
 
 
 def build_general_df(all_tests):
-    df_general = pd.DataFrame(columns=['Participant', 'Session', 'samples', 'duration', 'durationGTg', 'durationGTm'])
+    df_general = pd.DataFrame(columns=['participant', 'dataset', 'session', 'samples', 'duration', 'durationGTg', 'durationGTm'])
     for test in all_tests:
         participant = test.user_id
         if 'matey' in participant:
@@ -306,8 +305,9 @@ def build_general_df(all_tests):
         duration = (df['msFromStart'].iloc[-1] - df['msFromStart'].iloc[0]) / 1000
         durationGTg = test.gt_total_gwalk
         durationGTm = test.gt_total_manual
-        df_general = pd.concat([df_general, pd.DataFrame({'Participant': [participant],
-                                                          'Session': [session],
+        df_general = pd.concat([df_general, pd.DataFrame({'participant': [participant],
+                                                          'dataset':[test.dataset_id],
+                                                          'session': [session],
                                                           'samples': [n_samples],
                                                           'duration': [duration],
                                                           'durationGTg': [durationGTg],

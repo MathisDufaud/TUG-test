@@ -5,8 +5,6 @@ import matplotlib
 from SaraFolder.settings.utils_pisa import utils_pisatugloaders
 from SaraFolder.settings.utils_synergy import utils_synloaders
 
-matplotlib.use('TkAgg')
-
 if __name__ == "__main__":
 
     all_tests = utils_pisatugloaders.load_synpisatests()

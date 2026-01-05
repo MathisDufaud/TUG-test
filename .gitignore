@@ -1,0 +1,19 @@
+# Git ignore. Ignoring data_external, data_parkapp, data_synpisa, updrs folders
+.data_external/
+.data_parkapp/
+.data_synpisa/
+.updrs/
+
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+.DS_Store
+.vscode/
+.SaraFolder/results/
+*.pyo
+*.pyd
+.vscode/
+!.vscode/settings.json
+!.vscode/launch.json

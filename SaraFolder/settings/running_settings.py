@@ -1,27 +1,27 @@
 ##################### Data
-data_parkapp = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_parkapp"
-data_synpisa = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_synpisa"
-data_mateysanz = r"C:\Users\ao4518\Desktop\PHD\TUG-test\data_external\matey_sanz\DATA"
+data_parkapp = "/Users/ao4518/Desktop/PHD/TUG-test/data_parkapp"
+data_synpisa = "/Users/ao4518/Desktop/PHD/TUG-test/data_synpisa"
+data_mateysanz = "/Users/ao4518/Desktop/PHD/TUG-test/data_external/matey_sanz/DATA"
 test_id_start_parkapp = 0
 test_id_start_synergy = 0
 test_id_start_pisatug = 0
 
 ##################### Results
-results_path = r"C:\Users\ao4518\Desktop\PHD\TUG-test\SaraFolder\results"
-results_parkapp = results_path + r"\results_parkapp"
-results_synergy = results_path + r"\results_synergy"
-results_pisatug = results_path + r"\results_pisatug"
-results_all = results_path + r"\results_all"
+results_path = "/Users/ao4518/Desktop/PHD/TUG-test/SaraFolder/results"
+results_parkapp = results_path + "/results_parkapp"
+results_synergy = results_path + "/results_synergy"
+results_pisatug = results_path + "/results_pisatug"
+results_all = results_path +"/results_all"
 
 ##################### Figures
-figures_parkapp = results_parkapp + r"\figures"
-figures_synergy = results_synergy + r"\figures"
-figures_pisatug = results_pisatug + r"\figures"
-figures_all = results_all + r"\figures"
+figures_parkapp = results_parkapp + "/figures"
+figures_synergy = results_synergy + "/figures"
+figures_pisatug = results_pisatug + "/figures"
+figures_all = results_all + "/figures"
 
 ##################### Models
-models_parkapp = results_parkapp + r"\models"
-models_path = results_all + r"\models"
+models_parkapp = results_parkapp + "/models"
+models_path = results_all + "/models"
 
 ##################### Variables names
 ########## Park App Tests
