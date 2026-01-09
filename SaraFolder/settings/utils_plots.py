@@ -204,7 +204,7 @@ def plot_tugtoverview(df_general, image_path):
 
     return None
 
-def plot_icc(icc_s, icctype='ICC2'):
+def plot_icc(icc_s, icctype='ICC2', title=''):
 
     # Extract data for the specified ICC type
     configurations = []
@@ -394,7 +394,7 @@ def plot_icc(icc_s, icctype='ICC2'):
 
     # Adjust layout
     plt.tight_layout()
-    plt.savefig(running_settings.figures_parkapp + os.sep + 'icc.jpg', dpi=400)
+    plt.savefig(running_settings.figures_parkapp + os.sep + f'icc_{title}.jpg', dpi=400)
     plt.show()
 
     # =========================================================================
@@ -503,7 +503,7 @@ def plot_all_training_history(fold_models, title):
         ax5.grid(True, linestyle='--', alpha=0.6)
 
         # 6. Learning Rate
-        ax6.plot(epochs, history_dict['lr'], 'o-', color=fold_color, linewidth=2, markersize=markersize)
+        ax6.plot(epochs, history_dict['learning_rate'], 'o-', color=fold_color, linewidth=2, markersize=markersize)
         ax6.set_title('Learning Rate', fontsize=12, fontweight='bold')
         ax6.set_xlabel('Epoch')
         ax6.set_ylabel('Learning Rate')

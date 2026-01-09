@@ -16,7 +16,7 @@ if __name__ == "__main__":
     if True:
         utils_MLnew.setup_manual_labelling_csv(all_tests, filename='testssupervised_manualmsstartend_new.csv')
         
-        model, scaler, best_fold, all_fold_tests = utils_MLnew.ML_pipeline(all_tests,
+        model, scaler, best_fold, all_fold_tests = utils_MLphases.ML_pipeline_phases(all_tests,
                                     model_name="mdl_strongbs_sixax.h5", # let's keep the bigger kernels!
                                     architecture='strongbs', # strongbs, 'cnn_bilstm', # strongbs # bs_predictbatch, 'tcn'
                                     use_cv=True,

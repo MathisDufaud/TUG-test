@@ -1,5 +1,6 @@
 import os
 from collections import Counter
+import pickle
 
 import pandas as pd
 import numpy as np
@@ -741,6 +742,7 @@ def evaluate_cv(modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_
         best_val_f1 = f1
         best_fold_idx = fold
 
+
     print(f"\nFold {fold + 1} Sample-Level Validation Results:")
     print(f"  Loss:      {val_loss:.4f}")
     print(f"  Accuracy:  {val_acc:.4f}")
@@ -807,10 +809,17 @@ def plot_ml_prediction(test, error=None):
     ax1.set_ylim(-0.05, 1.05)
     ax1.legend(loc='upper left')
     ax1.grid(True, alpha=0.3)
-    ax1.set_title(f'Classification Predictions, test: {test.user_id}_{test.session_id}, '
-                  f'error ml: {np.round(error, 2)}, gtgwalk: {np.round(test.gt_total_gwalk,2)}, '
-                  f'gtmanual: {np.round(test.gt_total_manual,2)}, '
-                  f'gtml: {np.round(gtmltot,2)}', fontsize=14)
+    gtm = np.round(test.gt_total_manual,2) if test.gt_total_manual is not None else 0
+    if error is not None: 
+        ax1.set_title(f'Classification Predictions, test: {test.user_id}_{test.session_id}, '
+                    f'error ml: {np.round(error, 2)}, gtgwalk: {np.round(test.gt_total_gwalk,2)}, '
+                    f'gtmanual: {gtm}, '
+                    f'gtml: {np.round(gtmltot,2)}', fontsize=14)
+    else:
+        ax1.set_title(f'Classification Predictions, test: {test.user_id}_{test.session_id}, '
+                    f'error ml: {error}, gtgwalk: {np.round(test.gt_total_gwalk,2)}, '
+                    f'gtmanual: {gtm}, '
+                    f'gtml: {np.round(gtmltot,2)}', fontsize=14)
 
     # Plot 2: Binary Predictions
     ax2.plot(df['msFromStart'], df['predicted_testBool'],
@@ -1084,7 +1093,12 @@ def compute_error(msStart, msEnd, test):
     if len(gt_indices) > 0:
         gt_start = gt_indices['msFromStart'].values[0]
         gt_end = gt_indices['msFromStart'].values[-1]
-    error = (msEnd - msStart) - (gt_end / 1000 - gt_start / 1000)
+        gt = (gt_end - gt_start) / 1000
+
+    duration = (msEnd - msStart) 
+    if duration > 1000: 
+        duration = duration / 1000
+    error = duration - gt
     return error
 
 
@@ -1095,7 +1109,7 @@ def approach_duration_estimation(test, method=''):
         msStart, msEnd = basic_approach(processed_data)
         error = compute_error(msStart, msEnd, test)
 
-        if abs(error) > 5:
+        if abs(error) > 10:
             # plot_ml_prediction(test, error)
             verbose=True
         else:
@@ -1104,10 +1118,13 @@ def approach_duration_estimation(test, method=''):
         if method == 'timebtwbool':
             print("Using time between peaks for duration estimation")
             estimation = processed_data[['msFromStart', 'predicted_testBool']]
-
-            msStart, msEnd = iteratetimebtw(estimation, test, main_threshold_ms=10000, right_threshold_ms=5000, verbose=verbose)
-
-        return msStart/1000, msEnd/1000
+            msStart, msEnd = iteratetimebtw(estimation, test, main_threshold_ms=9000, right_threshold_ms=5000, verbose=verbose)
+            error = compute_error(msStart, msEnd, test)
+        if msStart is not None and msEnd is not None:
+            return msStart/1000, msEnd/1000
+        else: 
+            return None, None
+    
     except:
         processed_data = test.processed_data
         print(f"Issues with normal approaches, taking first and last raw sample. {test.user_id + '_' + str(test.session_id)}")
@@ -1125,13 +1142,9 @@ def evaluate_duration_tests(tests_original, method):
             msStart, msEnd = approach_duration_estimation(test, method='timebtwbool')
 
             test.results[method] = {'t_start': msStart, 't_end': msEnd}
-            test.error[method] = compute_error(msStart, msEnd, test)
+            error = compute_error(msStart, msEnd, test)
+            test.error[method] = error
 
-            gt_indices = test.processed_data[test.processed_data['testBool'] == True]
-            if len(gt_indices) > 0:
-                gt_start = gt_indices['msFromStart'].values[0]
-                gt_end = gt_indices['msFromStart'].values[-1]
-            error = (test.results[method]['t_end'] - test.results[method]['t_start']) - (gt_end/1000 - gt_start/1000)
             if abs(error) > 20:
                 print("Error > 20")
                 plot_ml_prediction(test, error)
@@ -1394,13 +1407,48 @@ def verify_stratification(all_tests, split_loop, n_splits=5):
     else:
         print(f"\n⚠ Some imbalance detected (this is normal for small datasets)")
 
-
 def apply_data_augmentation(X_train, y_train, X_val, y_val):
     return X_train, y_train, X_val, y_val
 
+def load_pretrained_model(model_name, best_fold_idx):
+    print(f"\n{'=' * 60}")
+    print(f"Loading model at {best_fold_idx} fold")
+
+    fold_model_name = f"{model_name.replace('.h5', '')}_fold{best_fold_idx}.h5"
+    modelObj = classes.MlModel(model_name=fold_model_name)
+    modelObj.load_model()
+    return modelObj
+
+def save_bestscaler(best_scaler, title):
+    scaler_filename = running_settings.models_path + os.sep + title+'_scaler.pickle'
+    pickle.dump(best_scaler, open(scaler_filename, "wb"))
+
+def load_bestscaler(title):
+    scaler_filename = running_settings.models_path + os.sep + title+'_scaler.pickle'
+    best_scaler = pickle.load(open(scaler_filename, "rb"))
+    return best_scaler
+
+def fittingmodel(fold, n_splits, X_train, y_train, X, X_val, y_val, model_name, modelcomments,
+                 architecture, training_epochs, save_model, output_steps):
+    print(f"\n{'=' * 60}")
+    print(f"Training Fold {fold + 1}/{n_splits}")
+    print(f"{'=' * 60}")
+
+    fold_model_name = f"{model_name.replace('.h5', '')}_fold{fold + 1}.h5"
+    modelObj = classes.MlModel(model_name=fold_model_name)
+    modelObj.define_model(save_model=save_model, n_features=X.shape[2], architecture=architecture, output_steps=output_steps)
+    modelObj.model_fit(
+        X_train, y_train, X_val, y_val,
+        plot=False,
+        epochs=training_epochs,
+        information=f"{modelcomments} - Fold {fold + 1}",
+        save_model=save_model)
+    return modelObj
 
 def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
-                n_splits=5, architecture='', training_epochs=5, save_model=False, input_type='triaxial', method='ml', output_steps=0, load_existing = False):
+                n_splits=5, architecture='', training_epochs=5, save_model=False, 
+                input_type='triaxial', method='ml', output_steps=0, 
+                load_existing = False, evaluation = True):
     """
     Train ML model with optional cross-validation.
 
@@ -1435,7 +1483,7 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
         original_tests_fold = {}
         fold_models = []
         scalers = []
-        best_fold_idx = None
+        best_fold_idx = 0
         best_val_f1 = 0
 
         for fold, (train_fold_idx, val_fold_idx) in enumerate(split_loop):
@@ -1465,41 +1513,27 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
 
                 # Define and train model
                 if not load_existing:
-                    print(f"\n{'=' * 60}")
-                    print(f"Training Fold {fold + 1}/{n_splits}")
-                    print(f"{'=' * 60}")
-
-                    fold_model_name = f"{model_name.replace('.h5', '')}_fold{fold + 1}.h5"
-                    modelObj = classes.MlModel(model_name=fold_model_name)
-                    modelObj.define_model(save_model=save_model, n_features=X.shape[2], architecture=architecture, output_steps=output_steps)
-                    modelObj.model_fit(
-                        X_train, y_train, X_val, y_val,
-                        plot=False,
-                        epochs=training_epochs,
-                        information=f"{modelcomments} - Fold {fold + 1}",
-                        save_model=save_model)
+                    modelObj = fittingmodel(fold, n_splits, X_train, y_train, X, X_val, y_val, model_name, modelcomments,
+                 architecture, training_epochs, save_model, output_steps)
                 else:
                     print(f"\n{'=' * 60}")
                     print(f"Loading model at {fold + 1}/{n_splits}")
-                    print(f"{'=' * 60}")
-
-                    fold_model_name = f"{model_name.replace('.h5', '')}_fold{fold + 1}.h5"
-                    modelObj = classes.MlModel(model_name=fold_model_name)
-                    modelObj.load_model()
+                    modelObj = load_pretrained_model(model_name, fold+1)
 
                 # Sample-level evaluation
                 cv_results, fold_models, best_val_f1, best_fold_idx = evaluate_cv(
                     modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_f1, best_fold_idx
                 )
-
-                # Test-level evaluation
-                test_results_df, test_level_metrics, val_tests_original = evaluate_cv_per_test(
-                    modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=output_steps
-                )
-                original_tests_fold[fold] = val_tests_original
-
                 cv_results_per_test_all.append(test_results_df)
-                cv_test_level_metrics.append(test_level_metrics)
+
+                if evaluation:
+                    # Test-level evaluation
+                    test_results_df, test_level_metrics, val_tests_original = evaluate_cv_per_test(
+                        modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=output_steps
+                    )
+                    original_tests_fold[fold] = val_tests_original
+                    cv_test_level_metrics.append(test_level_metrics)
+
             else:
                 print("No data in this batch")
                 continue
@@ -1508,24 +1542,25 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
             utils_plots.plot_all_training_history(fold_models, title=model_name.strip('.h5') + '_allfoldsresults.jpg')
 
         # Print CV summary - Sample Level
-        print(f"\n{'=' * 60}")
-        print("Cross-Validation Summary - SAMPLE LEVEL:")
-        print(f"{'=' * 60}")
-        cv_df = pd.DataFrame(cv_results)
-        for metric in ['val_accuracy', 'val_precision', 'val_recall', 'val_f1_score']:
-            mean_val = cv_df[metric].mean()
-            std_val = cv_df[metric].std()
-            print(f"{metric.replace('val_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
+        if evaluation: 
+            print(f"\n{'=' * 60}")
+            print("Cross-Validation Summary - SAMPLE LEVEL:")
+            print(f"{'=' * 60}")
+            cv_df = pd.DataFrame(cv_results)
+            for metric in ['val_accuracy', 'val_precision', 'val_recall', 'val_f1_score']:
+                mean_val = cv_df[metric].mean()
+                std_val = cv_df[metric].std()
+                print(f"{metric.replace('val_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
 
-        # Print CV summary - Test Level
-        print(f"\n{'=' * 60}")
-        print("Cross-Validation Summary - TEST LEVEL (averaged per test):")
-        print(f"{'=' * 60}")
-        cv_test_df = pd.DataFrame(cv_test_level_metrics)
-        for metric in ['mean_test_accuracy', 'mean_test_precision', 'mean_test_recall', 'mean_test_f1']:
-            mean_val = cv_test_df[metric].mean()
-            std_val = cv_test_df[metric].std()
-            print(f"{metric.replace('mean_test_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
+            # Print CV summary - Test Level
+            print(f"\n{'=' * 60}")
+            print("Cross-Validation Summary - TEST LEVEL (averaged per test):")
+            print(f"{'=' * 60}")
+            cv_test_df = pd.DataFrame(cv_test_level_metrics)
+            for metric in ['mean_test_accuracy', 'mean_test_precision', 'mean_test_recall', 'mean_test_f1']:
+                mean_val = cv_test_df[metric].mean()
+                std_val = cv_test_df[metric].std()
+                print(f"{metric.replace('mean_test_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
 
         # Save results
         if False:
@@ -1538,6 +1573,11 @@ def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
 
         best_model = fold_models[best_fold_idx]
         best_scaler = scalers[best_fold_idx]
+        # Save best_scaler: 
+        save_bestscaler(best_scaler)
+
+        
+
         if len(holdout_tests)>0:
             # Evaluate on holdout set
             test_indeces = np.arange(len(all_tests))

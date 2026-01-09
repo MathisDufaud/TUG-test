@@ -19,7 +19,7 @@ if __name__ == "__main__":
     all_tests = utils_parkapp.load_everything()
     #all_test_extra = utils_external.load_data()
 
-    if False:
+    if True:
         # Function to track comments for each test
         df_tests = utils_dataquality.observesingletests(all_tests, method='labelling', title='testssupervised_manualmsstartend_new.csv') # testssupervised_comments.csv'
         # utils_dataquality.investigate_tests_comments(all_tests, df_tests)

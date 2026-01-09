@@ -466,7 +466,7 @@ def process_tests_data(all_tests):
     for test in all_tests:
         test.processed_data = utils_pisatugloaders.process_data(test.raw_data)
         # # Remove nan rows
-        test.processed_data = test.processed_data.dropna().reset_index(drop=True)
+        test.processed_data = test.processed_data.dropna().reset_index(drop=True) # type: ignore
         test.error = {}
     return all_tests
 

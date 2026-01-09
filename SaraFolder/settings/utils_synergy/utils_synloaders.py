@@ -66,14 +66,6 @@ def overview_general(df_general, all_tests, resultspath, logging, plot):
         lg.stop_logging()
         sys.stdout = sys.__stdout__
 
-def tugt_overview_synergy(all_tests, logging):
-    df_general = utils_parkapp.build_general_df(all_tests)
-
-    resultspath = running_settings.results_synergy + os.sep + running_settings.tugt_overview_synergy
-    overview_general(df_general, all_tests, resultspath=resultspath, logging=logging)
-
-    return None
-
 def overview_total(all_tests, resultspath, title):
 
     lg = classes.Logger(resultspath + os.sep + 'overview'+title+'.md')

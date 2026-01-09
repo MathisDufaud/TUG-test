@@ -12,6 +12,7 @@ if __name__ == "__main__":
     all_tests_extra = utils_external.load_data()
     tests_dict = {test.user_id + '_' + str(test.session_id): test for test in all_tests}
 
+    
     tests_dict['1_synergy_1'].show_tuttecose()
 
     print(1)

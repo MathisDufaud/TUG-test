@@ -11,7 +11,6 @@ from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential, load_model
 from keras.layers import Conv1D, Bidirectional, LSTM, TimeDistributed, Dense, Dropout
 
-
 from SaraFolder.settings import utils_plots, running_settings, utils_MLnew
 
 import matplotlib
@@ -151,7 +150,7 @@ class TUGTest:
         gt = self.gt_total_gwalk
         if gt is None or np.isnan(gt):
             gt = self.gt_total_manual
-        if gt > 500:
+        if gt is not None and gt > 500:
             gt = gt / 1000
         return gt
 

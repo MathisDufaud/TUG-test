@@ -3,6 +3,7 @@ import pickle
 
 import numpy as np
 import pandas as pd
+from sklearn.calibration import LabelEncoder
 
 from SaraFolder.settings import running_settings, classes
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
@@ -41,11 +42,17 @@ def load_mateysanz(tests, subject_info):
         t = t.rename(columns={'x_gyro': 'rotRate.alpha', 'y_gyro': 'rotRate.beta', 'z_gyro': 'rotRate.gamma'})
         t = t.rename(columns={'x_acc': 'acc.x', 'y_acc': 'acc.y', 'z_acc': 'acc.z'})
         t = t.rename(columns={'timestamp': 'msFromStart'})
-        t['relative_timestamp'] = pd.to_timedelta(t['msFromStart'], unit='milliseconds').dt.total_seconds()
+        t['relative_timestamp'] = pd.to_timedelta(t['msFromStart'], unit= 'milliseconds').dt.total_seconds()
 
-        test.raw_data = t[['msFromStart', 'relative_timestamp', 'acc.x', 'acc.y', 'acc.z',
+        raw_data = t[['msFromStart', 'relative_timestamp', 'acc.x', 'acc.y', 'acc.z',
                             'rotRate.alpha', 'rotRate.beta', 'rotRate.gamma', 'label']].copy()
+        # Add to raw data label_encoded column 
+        # Create and fit the encoder
+        label_encoder = LabelEncoder()
+        raw_data['label_encoded'] = label_encoder.fit_transform(raw_data['label'])
+        print(dict(zip(label_encoder.classes_, label_encoder.transform(label_encoder.classes_))))
 
+        test.raw_data = raw_data
         all_tests.append(test)
 
     all_tests = utils_parkapp.process_tests_data(all_tests)

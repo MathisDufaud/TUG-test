@@ -549,17 +549,33 @@ def tugt_overview_pisa(all_tests, logging):
     resultspath = running_settings.results_pisatug + os.sep + running_settings.tugt_overview_pisa
     utils_synloaders.overview_general(df_general, all_tests, resultspath=resultspath, logging=logging, plot=True)
 
-
 def resample60(df_raw):
     df_raw['datetime_index'] = pd.to_timedelta(df_raw['relative_timestamp'], unit='s')
     df = df_raw.set_index('datetime_index')
-
-    # Sort by index to ensure proper interpolation
     df = df.sort_index()
-    df_resampled = df.resample(running_settings.parameters['resamplingdelta']).mean()
+    # Remove dubplicate indices if any
+    print("Removing duplicate indices for categorical resampling... Number of duplicate indexes: ", df.index.duplicated().sum())
+    df = df[~df.index.duplicated(keep='first')]
+    
+    if 'label' in df.columns:
+        # Separate categorical and numeric columns
+        categorical_cols = ['label', 'label_encoded']  # add any other categorical columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.difference(categorical_cols)
+        # Resample categorical columns with forward-fill
+        df_categorical = df[categorical_cols].resample(running_settings.parameters['resamplingdelta']).ffill()
+
+    else: 
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+
+    df_numeric = df[numeric_cols].resample(running_settings.parameters['resamplingdelta']).mean()
+
+    if 'label' in df.columns:
+        # Combine them
+        df_resampled = pd.concat([df_numeric, df_categorical], axis=1)
+    else:
+        df_resampled = df_numeric
 
     # Interpolate all numeric columns
-    numeric_cols = df_resampled.select_dtypes(include=[np.number]).columns
     df_resampled[numeric_cols] = df_resampled[numeric_cols].interpolate(method='linear')
 
     # Recalculate msFromStart and relative_timestamp based on new sampling rate
@@ -568,8 +584,7 @@ def resample60(df_raw):
     df_resampled['msFromStart'] = (time_seconds * 1000).astype(int)
 
     # Reset index to get datetime_index as a column, then drop it
-    df_resampled = df_resampled.reset_index()
-    df_final = df_resampled.drop('datetime_index', axis=1)
+    df_final = df_resampled.reset_index().drop('datetime_index', axis=1)
 
     return df_final
 

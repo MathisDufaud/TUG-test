@@ -342,12 +342,10 @@ def compute_error_tests(all_tests, method):
         all_errors[key] = duration - gt
         all_tests[i].error[method] = duration - gt
 
-
     return all_errors, indiv_errors_duration
 
 def compute_tests_stats(all_tests, stats_of_interest):
 
-    compute_stats_tests(all_tests)
 
     if True:
         # Plot statistics across all tests

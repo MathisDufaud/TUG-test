@@ -6,7 +6,6 @@ TUG-TEST
 - data_synpisa *(data)*
 - figures_TUG.pptx *(ppt with figures and updates)*
 - old material *(folder with old .py and .csv)*
-- readme.md
 - requirements.txt *(required libraries)*
 - updrs *(updrs data from ParkApp)*
 - SaraFolder
@@ -38,6 +37,9 @@ TUG-TEST
 3. Run: analysis_dataquality.py with True at utils_dataquality.observe_groundtruth(all_tests) --> observing groundtruths
 4. Run: analysis_dataquality.py with True at utils_synloaders.overview_total() --> .md output describing statistics of tests
 
+### External data Matey Sanz
+- Encoding the labels: {'SEATED': 0, 'SITTING_DOWN': 1, 'STANDING_UP': 2, 'TURNING': 3, 'WALKING': 4}
+
 ### Timestamp overview
 1. Pisa_new: 
    1. df_motion: milliseconds from start
@@ -49,8 +51,14 @@ TUG-TEST
 5. ParkApp: df_raw: msFromStart in milliseconds from 0. I want df_raw msFromStart to be in milliseconds.
 
 ## Running algorithms
+### Labelling and darioalgo:
 1. Run: crossdataset_analysis with True. Choose between method 'labelling' and method 'darioalgo'. Consider when labelling method fails, it fallsback on darioalgo. 
-2. 
+
+### ML Pipeline
+- Run ml_pipeline.p
+  - settings for utils_MLnew.ML_pipeline: model name, architecture, use_cv, n_splits, training_epochs, save_model, input_type, output_steps, **load_existing**. Load existing is a boolean value. If set to True, the function will search for a saved model in the local folders and it will test it on 
+
+
 
 
 

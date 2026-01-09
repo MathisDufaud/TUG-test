@@ -63,6 +63,3 @@ param_opt_labelling_algo = {
     'max_amplitutde_start_turn_sample':[0.25, 0.3, 0.35],
     'MCSFD':  [20, 30, 40],
 }
-
-
-
