@@ -16,21 +16,40 @@ import matplotlib.pyplot as plt
 from collections import Counter
 import seaborn as sns
 from scipy import stats as scipy_stats
-def loading_previous_comments(title, type):
 
+def loading_previous_comments(title, type):
     if title in os.listdir(running_settings.results_all):
         df_tests = pd.read_csv(running_settings.results_all + os.sep + title, index_col=0)
         print(f"Loaded existing comments from {running_settings.results_all + os.sep + title}")
         if 'gtManualS' in df_tests.columns:
             # Drop column
             df_tests.drop('gtManualS', axis=1, inplace=True)
-
-    else:
-        df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual',
-                                         'gt gwalk', 'gt manual', 'secStart', 'secEnd'])
+    else:  
+        if 'phases' not in title:
+            df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual',
+                                            'gt gwalk', 'gt manual', 'secStart','secEnd'])
+        else:
+            df_tests = pd.DataFrame(columns=['comment', 'whichstrange', 'error tot gwalk ', 'error tot manual',
+                            'gt gwalk', 'gt manual', 'secStart','startWalk1', 'firstTurn', 'startWalk2', 'secondTurn', 'secEnd'])
 
     return df_tests
 
+def click_one_timestamp(timestamp, value, fig):
+    # Select with cursor the start and end of the TUG test (x axis of the figure)
+    print(f"Click on the plot to select {str.upper(timestamp)}: {value}  ...")
+    plt.draw()
+    start_point = plt.ginput(1, timeout=0)  # Wait for 1 click, no timeout
+    if start_point:
+        secStart = start_point[0][0]  # Extract x-coordinate
+        # Draw vertical line at start
+        ax = fig.gca()  
+        line_start = ax.axvline(x=secStart, color='green', linestyle='--', linewidth=2, label=value)
+        plt.draw()
+        return secStart
+    else:
+        return None
+        
+    
 def observesingletests(all_tests, method, title):
     """
     Args:
@@ -121,6 +140,83 @@ def observesingletests(all_tests, method, title):
     print(f"Saved comments to {csvpath}")
 
     return df_tests
+
+def observesingletests_phases(all_tests, method, title):
+    """
+    Args:
+        all_tests: classes TUG test.
+
+    I want to plot each row data and be able to write a comment for that test that goes into the pd dataframe at each iteration
+
+    Returns:
+        a pandas dataframe with index the user_id + str(session_id), columns ['comments', 'whichstrangesignal']
+
+    """
+    df_tests = loading_previous_comments(title, type='alltests')
+
+    timestamps = {'secStart':'t0', 
+                  'startWalk1':'t1', 
+                  'firstTurn':'t2',
+                  'startWalk2':'t3', 
+                  'secondTurn':'t4', 
+                  'secEnd':'t5'
+                  }
+
+    for test in all_tests:
+        indexid = test.user_id + '_' + str(test.session_id)
+
+        if indexid in df_tests.index:
+            print(f"Skipping {indexid}, already in dataframe.")
+            continue
+
+        fig = test.data_quality_investigation(plot=True)
+
+        plt.draw()
+        plt.pause(0.5)  # Pause for 0.5 seconds
+
+        gtg = test.gt_total_gwalk
+        if gtg > 5000:
+            gtg = gtg / 1000
+        gtm = test.gt_total_manual
+        if gtm is not None:
+            if gtm > 5000:
+                gtm = gtm / 1000
+        else:
+            gtm = 0
+
+        if not isinstance(test.results[method], str):
+            error_tot_duration_gwalk = (test.results[method]['t_end'] - test.results[method]['t_start']) - gtg
+            error_tot_duration_manual = (test.results[method]['t_end'] - test.results[method]['t_start']) - gtm
+            print(f"Error with gwalk: {np.round(error_tot_duration_gwalk, 2)}, error with manual: {np.round(error_tot_duration_manual, 2)}")
+        else:
+            print(f"Result: {test.results[method]}")
+            error_tot_duration_gwalk = test.results[method]
+            error_tot_duration_manual = test.results[method]
+
+        print(f"GT gwalk: {gtg}, GT manual: {gtm}")
+
+        newtimestamps = []
+        for timestamp, value in timestamps.items():
+            t_x = click_one_timestamp(timestamp, value, fig)
+            newtimestamps.append(t_x)
+
+        # Get user input for comments
+        comment = input(f"Enter comment for test {indexid}: ")
+
+        # Add row to dataframe
+        df_tests.loc[indexid] = np.concatenate([[comment, None, error_tot_duration_gwalk, error_tot_duration_manual, gtg, gtm], newtimestamps])
+
+        print(f"Added comments for {indexid}: {df_tests.loc[indexid]}\n")
+        plt.close('all')
+
+        # Save dataframe to CSV
+    df_tests['gtManualS'] = df_tests['secEnd'] - df_tests['secStart']
+    csvpath = running_settings.results_all + os.sep + title
+    df_tests.to_csv(csvpath, index=True)
+    print(f"Saved comments to {csvpath}")
+
+    return df_tests
+
 
 def observesingletests_skipped(all_tests, method, title):
     """

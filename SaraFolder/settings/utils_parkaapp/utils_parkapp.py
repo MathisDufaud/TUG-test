@@ -608,11 +608,11 @@ def merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new):
     return all_tests_pisa_new
 
 
-def load_everything():
-    all_tests_pisa_new = load_all_tests(dataset_id='pisa_new', context='supervised')
-    all_tests_pisa = load_all_tests(dataset_id='pisa', context='supervised')
+def load_everything(context='supervised'):
+    all_tests_pisa_new = load_all_tests(dataset_id='pisa_new', context=context)
+    all_tests_pisa = load_all_tests(dataset_id='pisa', context=context)
     all_tests_pisa_new = merge_pisaoldnew(all_tests_pisa, all_tests_pisa_new)
-    all_tests_parkapp = load_all_tests(dataset_id='parkapp', context='supervised')
-    all_tests_synergy = load_all_tests(dataset_id='synergy', context='supervised')
+    all_tests_parkapp = load_all_tests(dataset_id='parkapp', context=context)
+    all_tests_synergy = load_all_tests(dataset_id='synergy', context=context)
     all_tests = list(np.concatenate([all_tests_synergy, all_tests_pisa, all_tests_parkapp, all_tests_pisa_new]))
     return all_tests

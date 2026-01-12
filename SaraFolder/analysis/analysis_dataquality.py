@@ -16,13 +16,15 @@ plt.ion()
 # 2) Park App signals are waay more noisy than the Synergy / Pisa. That is challenging for the LSTM, not for the french intern work
 
 if __name__ == "__main__":
-    all_tests = utils_parkapp.load_everything()
+    all_tests = utils_parkapp.load_everything(context='supervised')
     #all_test_extra = utils_external.load_data()
 
     if True:
-        # Function to track comments for each test
+        df_tests = utils_dataquality.observesingletests_phases(all_tests, method='labelling', title='testssupervised_phases.csv') # testssupervised_comments.csv'
+
+    if False:
         df_tests = utils_dataquality.observesingletests(all_tests, method='labelling', title='testssupervised_manualmsstartend_new.csv') # testssupervised_comments.csv'
-        # utils_dataquality.investigate_tests_comments(all_tests, df_tests)
+
         # All tests overview:
         utils_synloaders.overview_total(all_tests, resultspath=running_settings.results_all, title='overviewalldatasets')
 

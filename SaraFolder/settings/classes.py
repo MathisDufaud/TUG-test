@@ -358,21 +358,22 @@ class TUGTest:
     def data_quality_investigation(self, plot=False, method='labelling', df_tests = None):
         print(f"Investigating data quality for {self.user_id}_{self.session_id}")
         self.plot_labelling(method=method, plot=False)
-        index = self.user_id + '_' + str(self.session_id)
+        index = str(self.user_id) + '_' + str(self.session_id)
         if df_tests is not None:
             self.quality['visual'] = df_tests.loc[index, 'comment']
         stats = utils_dataquality.compute_test_stats(self.processed_data)
-
         self.quality['statssignal'] = stats
 
         if plot:
-            _ = utils_labelling.plot_faulty_signal(self.processed_data,
-                                               f"Test:{self.user_id+'_'+ str(self.session_id)} Quality",
+            fig = utils_labelling.plot_faulty_signal(self.processed_data,
+                                               f"Test:{str(self.user_id) +'_'+ str(self.session_id)} Quality",
                                                quality=self.quality, stats=None)
-        pass
+            return fig
+        else:
+            pass
 
     def plot_with_info(self, method):
-        fig = utils_labelling.plot_faulty_signal(self.processed_data, 'Test:' + self.user_id + '_' + str(self.session_id))
+        fig = utils_labelling.plot_faulty_signal(self.processed_data, 'Test:' + str(self.user_id) + '_' + str(self.session_id))
 
         # Add subplot to already established figure with text description of self.quality[method] + self.quality[visual] + self.quality['basic']
         quality_issues = []
