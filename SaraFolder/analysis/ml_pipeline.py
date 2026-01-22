@@ -14,18 +14,18 @@ if __name__ == "__main__":
 
     # Set up csv with new manual start and end times
     if True:
-        utils_MLnew.setup_manual_labelling_csv(all_tests, filename='testssupervised_manualmsstartend_new.csv')
+        all_tests = utils_MLnew.setup_manual_labelling_csv(all_tests, filename='testssupervised_manualmsstartend_new.csv')
         
         model, scaler, best_fold, all_fold_tests = utils_MLnew.ML_pipeline(all_tests,
                                     model_name="mdl_strongbs_sixax.h5", # let's keep the bigger kernels!
                                     architecture='strongbs', # strongbs, 'cnn_bilstm', # strongbs # bs_predictbatch, 'tcn'
                                     use_cv=True,
                                     n_splits='equalcvsplit',  # lopo # equalcvsplit # int number # type: ignore
-                                    training_epochs=30,
+                                    training_epochs=2,
                                     save_model=True,
                                     input_type='sixaxial', # or 'magnitude_acc' # triaxial
                                     output_steps=0,
-                                    load_existing=True, 
+                                    load_existing=False, 
                                     evaluation = False
                                     ) # type: ignore
 

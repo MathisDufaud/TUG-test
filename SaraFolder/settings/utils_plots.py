@@ -475,32 +475,33 @@ def plot_all_training_history(fold_models, title):
         ax2.grid(True, linestyle='--', alpha=0.6)
 
         # 3. Precision
-        ax3.plot(epochs, history_dict[precision_key], 'o-', color=fold_color, linewidth=2, markersize=markersize)
-        ax3.plot(epochs, history_dict[val_precision_key], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
-        ax3.set_title('Precision', fontsize=12, fontweight='bold')
-        ax3.set_xlabel('Epoch')
-        ax3.set_ylabel('Precision')
-        ax3.grid(True, linestyle='--', alpha=0.6)
+        if 'precision_key' in history_dict.keys():
+            ax3.plot(epochs, history_dict[precision_key], 'o-', color=fold_color, linewidth=2, markersize=markersize)
+            ax3.plot(epochs, history_dict[val_precision_key], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
+            ax3.set_title('Precision', fontsize=12, fontweight='bold')
+            ax3.set_xlabel('Epoch')
+            ax3.set_ylabel('Precision')
+            ax3.grid(True, linestyle='--', alpha=0.6)
 
-        # 4. Recall
-        ax4.plot(epochs, history_dict[recall_key], 'o-', color=fold_color, linewidth=2, markersize=markersize)
-        ax4.plot(epochs, history_dict[val_recall_key], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
-        ax4.set_title('Recall', fontsize=12, fontweight='bold')
-        ax4.set_xlabel('Epoch')
-        ax4.set_ylabel('Recall')
-        ax4.grid(True, linestyle='--', alpha=0.6)
+            # 4. Recall
+            ax4.plot(epochs, history_dict[recall_key], 'o-', color=fold_color, linewidth=2, markersize=markersize)
+            ax4.plot(epochs, history_dict[val_recall_key], '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
+            ax4.set_title('Recall', fontsize=12, fontweight='bold')
+            ax4.set_xlabel('Epoch')
+            ax4.set_ylabel('Recall')
+            ax4.grid(True, linestyle='--', alpha=0.6)
 
-        # 5. F1 Score (calculated from precision and recall)
-        train_f1 = [2 * (p * r) / (p + r) if (p + r) > 0 else 0 for p, r in
-                    zip(history_dict[precision_key], history_dict[recall_key])]
-        val_f1 = [2 * (p * r) / (p + r) if (p + r) > 0 else 0 for p, r in
-                  zip(history_dict[val_precision_key], history_dict[val_recall_key])]
-        ax5.plot(epochs, train_f1, 'o-', color=fold_color, linewidth=2, markersize=markersize)
-        ax5.plot(epochs, val_f1, '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
-        ax5.set_title('F1 Score (Calculated)', fontsize=12, fontweight='bold')
-        ax5.set_xlabel('Epoch')
-        ax5.set_ylabel('F1 Score')
-        ax5.grid(True, linestyle='--', alpha=0.6)
+            # 5. F1 Score (calculated from precision and recall)
+            train_f1 = [2 * (p * r) / (p + r) if (p + r) > 0 else 0 for p, r in
+                        zip(history_dict[precision_key], history_dict[recall_key])]
+            val_f1 = [2 * (p * r) / (p + r) if (p + r) > 0 else 0 for p, r in
+                    zip(history_dict[val_precision_key], history_dict[val_recall_key])]
+            ax5.plot(epochs, train_f1, 'o-', color=fold_color, linewidth=2, markersize=markersize)
+            ax5.plot(epochs, val_f1, '*-', color=fold_color, linewidth=2, markersize=markersize+1.5)
+            ax5.set_title('F1 Score (Calculated)', fontsize=12, fontweight='bold')
+            ax5.set_xlabel('Epoch')
+            ax5.set_ylabel('F1 Score')
+            ax5.grid(True, linestyle='--', alpha=0.6)
 
         # 6. Learning Rate
         ax6.plot(epochs, history_dict['learning_rate'], 'o-', color=fold_color, linewidth=2, markersize=markersize)

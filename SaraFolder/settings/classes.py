@@ -11,7 +11,7 @@ from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential, load_model
 from keras.layers import Conv1D, Bidirectional, LSTM, TimeDistributed, Dense, Dropout
 
-from SaraFolder.settings import utils_plots, running_settings, utils_MLnew
+from SaraFolder.settings import utils_CRFmodel, utils_plots, running_settings, utils_MLnew
 
 import matplotlib
 
@@ -21,6 +21,8 @@ from datetime import datetime
 from typing import Optional, Dict, List
 import numpy as np
 from matplotlib import pyplot as plt
+
+from SaraFolder.settings import utils_MLphases
 plt.ion()
 
 from SaraFolder.settings import utils_labelling, utils_dataquality
@@ -435,7 +437,6 @@ class MlModel:
         else:
             model = self._build_simple_lstm(window_size, n_features)
 
-        # Compile with appropriate loss and metrics
         model.compile(
             optimizer=Adam(learning_rate=1e-4, clipnorm=1.0),
             loss='binary_crossentropy',
@@ -625,6 +626,305 @@ class MlModel:
 
         # Predict for each of those 15 timesteps
         out_seq = TimeDistributed(Dense(1, activation='sigmoid'))(x)  # (batch, 15, 1)
+
+        model = Model(inp, out_seq)
+
+        return model
+    
+
+class MlModelphases:
+    def __init__(
+            self,
+            model_name: str,
+    ):
+        # Identifiers
+        self.model_name = model_name
+
+    def define_model(self, window_size=60, n_features=9, architecture='', save_model=False, output_steps=0, num_classes=1):
+        """
+        Define model with multiple architecture options.
+        Args:
+            architecture: 'cnn_bilstm', 'transformer', 'tcn', or 'simple_lstm'
+            num_classes: 1 for binary classification, >1 for multiclass (e.g., 4 for classes 0,1,2,3)
+        """
+
+        print("Selecting architecture: " + architecture)
+        if architecture == 'cnn_bilstm':
+            model = self._build_cnn_bilstm(window_size, n_features, num_classes)
+        elif architecture == 'tcn':
+            model = self._build_tcn_residual(window_size, n_features, num_classes)
+        elif architecture == 'strongbs':
+            model = self._build_strong_baseline(window_size, n_features, num_classes)
+        elif architecture == 'bs_predictbatch':
+            model = self._build_strong_baseline_batch(window_size, n_features, output_steps, num_classes)
+        elif architecture == 'strongbs_crf':
+            model = utils_CRFmodel.build_crf_model(window_size=60, n_features=n_features, output_steps=output_steps)
+        else:
+            model = self._build_simple_lstm(window_size, n_features, num_classes)
+
+        # Automatic loss and metrics based on num_classes
+        if 'crf' not in architecture:
+            if num_classes == 1:
+                loss = 'binary_crossentropy'
+                metrics_list = ['accuracy', metrics.Precision(), metrics.Recall()]
+            else:
+                loss = 'sparse_categorical_crossentropy'
+                metrics_list = ['accuracy']
+
+            model.compile(
+                optimizer=Adam(learning_rate=1e-4, clipnorm=1.0),
+                loss=loss,
+                metrics=metrics_list
+            )
+
+        if 'crf' in architecture:
+            metrics_list = ['accuracy']
+            model.compile(
+                optimizer=Adam(learning_rate=1e-4, clipnorm=1.0),
+                metrics=metrics_list
+            )
+
+
+
+        self.defined_model = model
+        self.num_classes = num_classes
+
+        # Callbacks
+        if save_model:
+            path_dir = running_settings.models_path + os.sep + self.model_name
+            self.defined_checkpoint = ModelCheckpoint(
+                path_dir,
+                save_best_only=True,
+                monitor='val_loss',
+                mode='min',
+                verbose=1
+            )
+        return model
+
+    def model_fit(self, X_train, y_train, X_val, y_val, plot=False,
+                  information=None, epochs=5, batch_size=32, save_model=False):
+        """Enhanced training with early stopping and learning rate scheduling."""
+        if information:
+            print("Model information:", information)
+
+        # Additional callbacks
+        early_stopping = EarlyStopping(
+            monitor='val_loss',
+            patience=15,
+            restore_best_weights=True,
+            verbose=1
+        )
+
+        reduce_lr = ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=5,
+            min_lr=1e-7,
+            min_delta=0.001,
+            cooldown=2,
+            verbose=1
+        )
+
+        # Handle class imbalance if needed
+        class_weights = {}
+        if self.num_classes == 1:
+            # Binary classification
+            pos_ratio = np.mean(y_train)
+            if pos_ratio < 0.3 or pos_ratio > 0.7:
+                class_weights = {
+                    0: 1.0 / (1 - pos_ratio),
+                    1: 1.0 / pos_ratio
+                }
+                print(f"Using class weights: {class_weights}")
+        else:
+            # Multiclass classification
+            y_flat = y_train.reshape(-1)
+            unique, counts = np.unique(y_flat, return_counts=True)
+            total = len(y_flat)
+            class_weights = {int(cls): total / (len(unique) * count) for cls, count in zip(unique, counts)}
+            print(f"Class distribution: {dict(zip(unique, counts))}")
+            print(f"Class weights computed: {class_weights}")
+        
+        if save_model:
+            callbacks = [self.defined_checkpoint, early_stopping, reduce_lr]
+        else:
+            callbacks = [early_stopping, reduce_lr]
+
+        if 'crf' not in self.model_name:
+            if class_weights is not None:
+                sample_weights = np.zeros_like(y_train, dtype=float)
+            for class_id, weight in class_weights.items():
+                sample_weights[y_train == class_id] = weight   
+
+            print(f"Training with X_train shaped: {X_train.shape}")
+            print(f"Evaluation with X_val shaped: {X_val.shape}")
+            try:
+                history = self.defined_model.fit(
+                    x=X_train, y=y_train,
+                    validation_data=(X_val, y_val),
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    callbacks=callbacks,
+                    # class_weight=class_weights,
+                    sample_weight=sample_weights, 
+                    verbose=1
+                )
+            except:
+                print('bug')
+            
+            self.model_history = history
+            self.fitted_model = self.defined_model
+            if plot:
+                utils_plots.plot_training_history(history, title=self.model_name.strip('.h5') + '.jpg')
+            return history, '_'
+        else: 
+            print(f"Training with X_train shaped: {X_train.shape}")
+            print(f"Evaluation with X_val shaped: {X_val.shape}")
+            if True:
+                    history = self.defined_model.fit(
+                    x=X_train, y=y_train,
+                    validation_data=(X_val, y_val),
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    callbacks=callbacks,
+                    # class_weight=class_weights,
+                    sample_weight=None, 
+                    verbose=1
+                    )
+                    self.model_history = history
+                    self.fitted_model = self.defined_model
+            if False:
+                res_train_fold =self.defined_model.train_step((X_train, y_train))
+                res_val_fold = self.defined_model.test_step((X_val, y_val))
+                self.fitted_model = self.defined_model
+
+                return res_train_fold, res_val_fold
+        
+
+
+
+    def save_model(self, title):
+        self.fitted_model.save(running_settings.models_path + os.sep + title)
+
+    def load_model(self):
+        self.fitted_model = load_model(running_settings.models_path + os.sep + self.model_name)
+
+    def _build_cnn_bilstm(self, window_size, n_features, num_classes=1):
+        """Improved CNN-BiLSTM with batch normalization and regularization."""
+        output_units = 1 if num_classes == 1 else num_classes
+        output_activation = 'sigmoid' if num_classes == 1 else 'softmax'
+        
+        model = Sequential([
+            Conv1D(64, kernel_size=3, activation='relu', padding='same',
+                   input_shape=(window_size, n_features)),
+            BatchNormalization(),
+            Dropout(0.2),
+
+            Conv1D(128, kernel_size=3, activation='relu', padding='same'),
+            BatchNormalization(),
+            Dropout(0.2),
+
+            Conv1D(128, kernel_size=3, activation='relu', padding='same'),
+            BatchNormalization(),
+            Dropout(0.2),
+
+            Bidirectional(LSTM(64, return_sequences=True)),
+            Dropout(0.3),
+
+            TimeDistributed(Dense(32, activation='relu')),
+            TimeDistributed(Dense(output_units, activation=output_activation))
+        ])
+        return model
+
+    def _build_tcn_residual(self, window_size, n_features, num_classes=1):
+        output_units = 1 if num_classes == 1 else num_classes
+        output_activation = 'sigmoid' if num_classes == 1 else 'softmax'
+        
+        def residual_tcn_block(x, filters, kernel_size, dilation_rate, dropout=0.2):
+            conv = Conv1D(filters, kernel_size, padding='causal', dilation_rate=dilation_rate, activation='relu')(x)
+            conv = BatchNormalization()(conv)
+            conv = Dropout(dropout)(conv)
+            conv = Conv1D(filters, kernel_size, padding='causal', dilation_rate=dilation_rate, activation='relu')(conv)
+            conv = BatchNormalization()(conv)
+            conv = Dropout(dropout)(conv)
+            # residual
+            if x.shape[-1] != filters:
+                res = Conv1D(filters, 1, padding='same')(x)
+            else:
+                res = x
+            return Activation('relu')(Add()([res, conv]))
+
+        inp = Input(shape=(window_size, n_features))
+        x = Conv1D(64, 3, padding='causal', activation='relu')(inp)
+        x = residual_tcn_block(x, 64, 3, dilation_rate=1)
+        x = residual_tcn_block(x, 64, 3, dilation_rate=2)
+        x = residual_tcn_block(x, 128, 3, dilation_rate=4)
+        x = residual_tcn_block(x, 128, 3, dilation_rate=8)
+        out = TimeDistributed(Dense(output_units, activation=output_activation))(x)
+        model = Model(inp, out)
+        return model
+
+    def _build_simple_lstm(self, window_size, n_features, num_classes=1):
+        """Simpler LSTM baseline."""
+        output_units = 1 if num_classes == 1 else num_classes
+        output_activation = 'sigmoid' if num_classes == 1 else 'softmax'
+        
+        model = Sequential([
+            LSTM(32, return_sequences=True, input_shape=(window_size, n_features)),
+            Dropout(0.3),
+            LSTM(32, return_sequences=True),
+            Dropout(0.3),
+            TimeDistributed(Dense(output_units, activation=output_activation))
+        ])
+        return model
+
+    def _build_strong_baseline(self, window_size, n_features, num_classes=1):
+        output_units = 1 if num_classes == 1 else num_classes
+        output_activation = 'sigmoid' if num_classes == 1 else 'softmax'
+        
+        inp = Input(shape=(window_size, n_features))
+        # multi-scale convs
+        c1 = Conv1D(64, 8, padding='same', activation='relu')(inp)
+        c1 = BatchNormalization()(c1)
+        c2 = Conv1D(64, 12, padding='same', activation='relu')(inp)
+        c2 = BatchNormalization()(c2)
+        c3 = Conv1D(64, 16, padding='same', activation='relu')(inp)
+        c3 = BatchNormalization()(c3)
+        x = Concatenate()([c1, c2, c3])  # shape: (T, 192)
+        x = Dropout(0.2)(x)
+
+        x = Bidirectional(LSTM(64, return_sequences=True))(x)
+        x = Dropout(0.3)(x)
+
+        out_seq = TimeDistributed(Dense(output_units, activation=output_activation))(x)
+        model = Model(inp, out_seq)
+        return model
+
+    def _build_strong_baseline_batch(self, window_size=60, n_features=9, output_steps=15, num_classes=1):
+        output_units = 1 if num_classes == 1 else num_classes
+        output_activation = 'sigmoid' if num_classes == 1 else 'softmax'
+        
+        inp = Input(shape=(window_size, n_features))
+
+        # Multi-scale convs
+        c1 = Conv1D(64, 3, padding='same', activation='relu')(inp)
+        c1 = BatchNormalization()(c1)
+        c2 = Conv1D(64, 5, padding='same', activation='relu')(inp)
+        c2 = BatchNormalization()(c2)
+        c3 = Conv1D(64, 7, padding='same', activation='relu')(inp)
+        c3 = BatchNormalization()(c3)
+        x = Concatenate()([c1, c2, c3])   # (batch, 60, 192)
+        x = Dropout(0.2)(x)
+
+        # Temporal modeling
+        x = Bidirectional(LSTM(64, return_sequences=True))(x)  # (batch, 60, 128)
+        x = Dropout(0.3)(x)
+
+        # Keep only the last 15 timesteps
+        x = Lambda(lambda t: t[:, -output_steps:, :])(x)  # (batch, 15, 128)
+
+        # Predict for each of those 15 timesteps
+        out_seq = TimeDistributed(Dense(output_units, activation=output_activation))(x)  # (batch, 15, output_units)
 
         model = Model(inp, out_seq)
 

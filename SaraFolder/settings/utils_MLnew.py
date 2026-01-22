@@ -21,20 +21,60 @@ from SaraFolder.settings.utils_parkaapp import utils_parkapp
 def setup_manual_labelling_csv(all_tests, filename):
     # Read csv
     df_manual = pd.read_csv(running_settings.results_all + os.sep + filename)
+    if 'startWalk1' in df_manual.columns: phases = True
+    else: phases = False
+
+    startWalk1 = 0
+    firstTurn = 0
+    secondTurn = 0
+    startWalk2 = 0
 
     for test in all_tests:
         indexid = test.user_id + '_' + str(test.session_id)
-        df_test = df_manual[df_manual['Unnamed: 0'] == indexid]
-        secStart = df_test['secStart'].values[0]
-        secEnd = df_test['secEnd'].values[0]
-        msStart = secStart * 1000
-        msEnd = secEnd * 1000
+        if indexid in df_manual['Unnamed: 0'].values:
+            df_test = df_manual[df_manual['Unnamed: 0'] == indexid]
+            secStart = df_test['secStart'].values[0]
+            secEnd = df_test['secEnd'].values[0]
+            msStart = secStart * 1000
+            msEnd = secEnd * 1000
+            if phases:
+                startWalk1 = df_test['startWalk1'].values[0]*1000
+                firstTurn = df_test['firstTurn'].values[0]*1000
+                startWalk2 = df_test['startWalk2'].values[0]*1000
+                secondTurn = df_test['secondTurn'].values[0]*1000
 
-        test.processed_data['testBool'] = False
-        test.processed_data.loc[(test.processed_data['msFromStart'] >= msStart) &
-                                (test.processed_data['msFromStart'] <= msEnd), 'testBool'] = True
-    return None
+            test.processed_data['testBool'] = False
+            test.processed_data.loc[(test.processed_data['msFromStart'] >= msStart) &
+                                    (test.processed_data['msFromStart'] <= msEnd), 'testBool'] = True
+            if phases: 
+                test.processed_data['testPhases'] = 'No test'
+                test.processed_data.loc[(test.processed_data['msFromStart'] >= msStart) &
+                                        (test.processed_data['msFromStart'] <= startWalk1), 'testPhases'] = 'Sit-to-stand'
+                test.processed_data.loc[(test.processed_data['msFromStart'] >= startWalk1) &
+                                        (test.processed_data['msFromStart'] <= firstTurn), 'testPhases'] = 'Walking1'
+                test.processed_data.loc[(test.processed_data['msFromStart'] >= firstTurn) &
+                                        (test.processed_data['msFromStart'] <= startWalk2), 'testPhases'] = 'Turn1'
+                test.processed_data.loc[(test.processed_data['msFromStart'] >= startWalk2) &
+                                        (test.processed_data['msFromStart'] <= secondTurn), 'testPhases'] = 'Walking2'
+                test.processed_data.loc[(test.processed_data['msFromStart'] >= secondTurn) &
+                                        (test.processed_data['msFromStart'] <= msEnd), 'testPhases'] = 'Turn2+Stand-to-sit'                   
+        else: 
+            # Remove test from all_tests
+            all_tests.remove(test)
+    return all_tests
 
+def evaluation_level(cv_results):
+    print(f"\n{'=' * 60}")
+    print("Cross-Validation Summary - SAMPLE LEVEL:")
+    print(f"{'=' * 60}")
+    cv_df = pd.DataFrame(cv_results)
+    for metric in ['val_accuracy', 'val_precision', 'val_recall', 'val_f1_score']:
+        mean_val = cv_df[metric].mean()
+        std_val = cv_df[metric].std()
+        if 'val_' in metric:
+            print(f"{metric.replace('val_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
+        if 'mean_' in metric: 
+            print(f"{metric.replace('mean_test_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
 
 def prep_data(all_tests, fold_idx=None, n_splits=5, window_size=60, stride=30, input_type='triaxial_acc', output_steps=0):
     """
@@ -79,12 +119,6 @@ def prep_data(all_tests, fold_idx=None, n_splits=5, window_size=60, stride=30, i
         if n_samples < window_size:
             print(f"Warning: Test {test_idx} has only {n_samples} samples, skipping...")
             continue
-
-        # Create sequences with stride
-        # for i in range(0, n_samples - window_size + 1, stride):
-        #     X_list.append(test_data[i:i + window_size])
-        #     y_list.append(target_data[i:i + window_size])
-        #     test_indices.append(test_idx)
 
         if output_steps>0:
             target_start = window_size - output_steps
@@ -185,40 +219,6 @@ def split_data(X, y, test_indices, test_index, fold_idx=None):
         print(f"Val class balance: {np.mean(y_val):.3f}")
 
     return X_train, X_val, y_train, y_val
-
-
-"""def evaluate_cv(modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_f1):
-    # Evaluate on validation set
-
-    y_pred = modelObj.fitted_model.predict(X_val, verbose=0)
-    y_pred_binary = (y_pred > 0.5).astype(int)
-
-    y_val_flat = y_val.reshape(-1)
-    y_pred_flat = y_pred_binary.reshape(-1)
-
-    val_loss, val_acc = modelObj.fitted_model.evaluate(X_val, y_val, verbose=0)
-    precision = precision_score(y_val_flat, y_pred_flat)
-    recall = recall_score(y_val_flat, y_pred_flat)
-    f1 = f1_score(y_val_flat, y_pred_flat)
-
-    cv_results.append({
-        'fold': fold + 1,
-        'val_loss': val_loss,
-        'val_accuracy': val_acc,
-        'val_precision': precision,
-        'val_recall': recall,
-        'val_f1_score': f1
-    })
-    fold_models.append(modelObj)
-
-    # Track best fold by F1 score
-    if f1 > best_val_f1:
-        best_val_f1 = f1
-        best_fold_idx = fold
-
-    print(f"Fold {fold + 1} - Val Acc: {val_acc:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
-
-    return cv_results, fold_models, best_val_f1, best_fold_idx"""
 
 
 def evaluate_holdout(best_model, best_scaler, X, y, test_indices, test_index, holdout_tests,
@@ -751,8 +751,6 @@ def evaluate_cv(modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_
     print(f"  F1-Score:  {f1:.4f}")
 
     return cv_results, fold_models, best_val_f1, best_fold_idx
-
-
 
 
 def plot_ml_prediction(test, error=None):
@@ -1445,174 +1443,6 @@ def fittingmodel(fold, n_splits, X_train, y_train, X, X_val, y_val, model_name, 
         save_model=save_model)
     return modelObj
 
-def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
-                n_splits=5, architecture='', training_epochs=5, save_model=False, 
-                input_type='triaxial', method='ml', output_steps=0, 
-                load_existing = False, evaluation = True):
-    """
-    Train ML model with optional cross-validation.
-
-    Args:
-        all_tests: TUG classes objects with processed_data containing sensor data
-        model_name: Name for saving the model
-        use_cv: Whether to use cross-validation
-        n_splits: Number of folds for cross-validation
-
-    Returns:
-        Trained model object (or list of models if using CV)
-    """
-
-    modelcomments = running_settings.model_comments
-
-    X, y, test_index = prep_data(all_tests, stride=running_settings.parameters['stride'], input_type=input_type, output_steps=output_steps)
-
-    if use_cv:
-        if isinstance(n_splits, int):
-            split_loop, holdout_tests_original, holdout_tests = kfold_validation(all_tests, n_splits=n_splits)
-
-        elif n_splits == 'equalcvsplit':
-            split_loop = kfold_validation_equalsplit(all_tests, n_splits=5)
-            holdout_tests_original, holdout_tests = [], []
-
-        elif n_splits == 'lopo':
-            split_loop, n_splits, holdout_tests_original, holdout_tests = lopo_validation(all_tests)
-
-        cv_results = []
-        cv_results_per_test_all = []
-        cv_test_level_metrics = []
-        original_tests_fold = {}
-        fold_models = []
-        scalers = []
-        best_fold_idx = 0
-        best_val_f1 = 0
-
-        for fold, (train_fold_idx, val_fold_idx) in enumerate(split_loop):
-            val_tests = val_fold_idx
-            val_tests_original = {i: test for i, test in enumerate(all_tests) if i in val_tests}
-
-            X_train = X[np.isin(test_index, train_fold_idx)]
-            y_train = y[np.isin(test_index, train_fold_idx)]
-
-            scaler = StandardScaler()
-            X_train_flat = X_train.reshape(-1, X_train.shape[-1])
-            X_train_scaled = scaler.fit_transform(X_train_flat)
-            X_train = X_train_scaled.reshape(X_train.shape)
-            scalers.append(scaler)
-
-            X_val = X[np.isin(test_index, val_fold_idx)]
-            y_val = y[np.isin(test_index, val_fold_idx)]
-
-            if X_val.shape[0]>0:
-                X_val_flat = X_val.reshape(-1, X_val.shape[-1])
-                X_val_scaled = scaler.transform(X_val_flat)
-                X_val = X_val_scaled.reshape(X_val.shape)
-
-                val_test_index = test_index[np.isin(test_index, val_fold_idx)]
-
-                X_train, y_train, X_val, y_val = apply_data_augmentation(X_train, y_train, X_val, y_val)
-
-                # Define and train model
-                if not load_existing:
-                    modelObj = fittingmodel(fold, n_splits, X_train, y_train, X, X_val, y_val, model_name, modelcomments,
-                 architecture, training_epochs, save_model, output_steps)
-                else:
-                    print(f"\n{'=' * 60}")
-                    print(f"Loading model at {fold + 1}/{n_splits}")
-                    modelObj = load_pretrained_model(model_name, fold+1)
-
-                # Sample-level evaluation
-                cv_results, fold_models, best_val_f1, best_fold_idx = evaluate_cv(
-                    modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_f1, best_fold_idx
-                )
-                cv_results_per_test_all.append(test_results_df)
-
-                if evaluation:
-                    # Test-level evaluation
-                    test_results_df, test_level_metrics, val_tests_original = evaluate_cv_per_test(
-                        modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=output_steps
-                    )
-                    original_tests_fold[fold] = val_tests_original
-                    cv_test_level_metrics.append(test_level_metrics)
-
-            else:
-                print("No data in this batch")
-                continue
-
-        if not load_existing:
-            utils_plots.plot_all_training_history(fold_models, title=model_name.strip('.h5') + '_allfoldsresults.jpg')
-
-        # Print CV summary - Sample Level
-        if evaluation: 
-            print(f"\n{'=' * 60}")
-            print("Cross-Validation Summary - SAMPLE LEVEL:")
-            print(f"{'=' * 60}")
-            cv_df = pd.DataFrame(cv_results)
-            for metric in ['val_accuracy', 'val_precision', 'val_recall', 'val_f1_score']:
-                mean_val = cv_df[metric].mean()
-                std_val = cv_df[metric].std()
-                print(f"{metric.replace('val_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
-
-            # Print CV summary - Test Level
-            print(f"\n{'=' * 60}")
-            print("Cross-Validation Summary - TEST LEVEL (averaged per test):")
-            print(f"{'=' * 60}")
-            cv_test_df = pd.DataFrame(cv_test_level_metrics)
-            for metric in ['mean_test_accuracy', 'mean_test_precision', 'mean_test_recall', 'mean_test_f1']:
-                mean_val = cv_test_df[metric].mean()
-                std_val = cv_test_df[metric].std()
-                print(f"{metric.replace('mean_test_', '').replace('_', ' ').title():15s}: {mean_val:.4f} ± {std_val:.4f}")
-
-        # Save results
-        if False:
-            cv_df.to_csv(running_settings.results_all + os.sep + 'cv_results_sample_level.csv', index=False)
-            cv_test_df.to_csv(running_settings.results_all + os.sep + 'cv_results_test_level.csv', index=False)
-
-            # Save all per-test results
-            all_test_results = pd.concat(cv_results_per_test_all, ignore_index=True)
-            all_test_results.to_csv(running_settings.results_all + os.sep + 'cv_per_test_detailed.csv', index=False)
-
-        best_model = fold_models[best_fold_idx]
-        best_scaler = scalers[best_fold_idx]
-        # Save best_scaler: 
-        save_bestscaler(best_scaler)
-
-        
-
-        if len(holdout_tests)>0:
-            # Evaluate on holdout set
-            test_indeces = np.arange(len(all_tests))
-
-            # Evaluate on holdout set
-            holdout_results = evaluate_holdout(best_model, best_scaler,
-                                               X, y, test_indeces, test_index, holdout_tests, save=False)
-
-            # modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
-            holdout_results_df, holdout_level_metrics, holdout_tests_original = evaluate_holdout_per_test(best_model,
-                                                                                                          best_scaler, X, y,
-                                                                                                          test_index,
-                                                                                                          holdout_tests,
-                                                                                                          best_fold_idx,
-                                                                                                          holdout_tests_original)
-
-        all_folds_tests = observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method, modelname=model_name.strip('.h5'))
-
-        return best_model, best_scaler, best_fold_idx, all_folds_tests
-
-    else:
-        # Single model training (no CV) or loading existing model
-        if not load_existing:
-            # Train on all data
-            X_train, X_val, y_train, y_val, X_holdout, y_holdout = split_data(X, y, test_index, fold_idx=None)
-
-            modelObj = classes.MlModel(model_name=model_name)
-            modelObj.define_model()
-            modelObj.model_fit(X_train, y_train, X_val, y_val, plot=True, information=modelcomments)
-            modelObj.save_model(title=modelObj.model_name)
-        else:
-            modelObj = classes.MlModel(model_name=model_name)
-            modelObj.load_model(title=modelObj.model_name)
-
-        return modelObj
 
 def investigate_probastats_error(all_fold_tests):
 
@@ -1683,9 +1513,7 @@ def probability_quality(test):
 
     return stats
 
-
 def holdout_external_testing(model, scaler, best_fold, input_type, output_steps, all_tests_matey):
-
     modelcomments = running_settings.model_comments
 
     X, y, test_index = prep_data(all_tests_matey, stride=running_settings.parameters['stride'],
@@ -1715,3 +1543,169 @@ def holdout_external_testing(model, scaler, best_fold, input_type, output_steps,
                                                        modelname=model.model_name.strip('.h5'))
 
     return None
+
+def defining_fold(all_tests, n_splits): 
+    if isinstance(n_splits, int):
+        split_loop, holdout_tests_original, holdout_tests = kfold_validation(all_tests, n_splits=n_splits)
+
+    elif n_splits == 'equalcvsplit':
+        split_loop = kfold_validation_equalsplit(all_tests, n_splits=5)
+        holdout_tests_original, holdout_tests = [], []
+
+    elif n_splits == 'lopo':
+        split_loop, n_splits, holdout_tests_original, holdout_tests = lopo_validation(all_tests)
+    return holdout_tests_original, holdout_tests, split_loop
+
+def scale_data(X_train, scaler, fit=False):
+    X_train_flat = X_train.reshape(-1, X_train.shape[-1])
+    if fit:
+        X_train_scaled = scaler.fit_transform(X_train_flat)
+    else:
+        X_train_scaled = scaler.transform(X_train_flat)
+    X_train = X_train_scaled.reshape(X_train.shape)
+    return X_train, scaler
+    
+
+def ML_pipeline(all_tests, model_name="best_model.h5", use_cv=True,
+                n_splits=5, architecture='', training_epochs=5, save_model=False, 
+                input_type='triaxial', method='ml', output_steps=0, 
+                load_existing = False, evaluation = True):
+    """
+    Train ML model with optional cross-validation.
+
+    Args:
+        all_tests: TUG classes objects with processed_data containing sensor data
+        model_name: Name for saving the model
+        use_cv: Whether to use cross-validation
+        n_splits: Number of folds for cross-validation
+
+    Returns:
+        Trained model object (or list of models if using CV)
+    """
+
+    modelcomments = running_settings.model_comments
+
+    X, y, test_index = prep_data(all_tests, stride=running_settings.parameters['stride'], input_type=input_type, output_steps=output_steps)
+
+    if use_cv:
+        holdout_tests_original, holdout_tests, split_loop = defining_fold(all_tests, n_splits)
+
+        cv_results = []
+        cv_results_per_test_all = []
+        cv_test_level_metrics = []
+        original_tests_fold = {}
+        fold_models = []
+        scalers = []
+        best_fold_idx = 0
+        best_val_f1 = 0
+
+        for fold, (train_fold_idx, val_fold_idx) in enumerate(split_loop):
+            val_tests = val_fold_idx
+            val_tests_original = {i: test for i, test in enumerate(all_tests) if i in val_tests}
+
+            X_train = X[np.isin(test_index, train_fold_idx)]
+            y_train = y[np.isin(test_index, train_fold_idx)]
+
+            X_train, scaler = scale_data(X_train, StandardScaler(), fit=True)
+            scalers.append(scaler)
+
+            X_val = X[np.isin(test_index, val_fold_idx)]
+            y_val = y[np.isin(test_index, val_fold_idx)]
+
+            if X_val.shape[0]>0:
+                X_val, scaler = scale_data(X_val, scaler=scaler, fit=False)
+
+                val_test_index = test_index[np.isin(test_index, val_fold_idx)]
+
+                # X_train, y_train, X_val, y_val = apply_data_augmentation(X_train, y_train, X_val, y_val)
+
+                # Define and train model
+                if not load_existing:
+                    modelObj = fittingmodel(fold, n_splits, X_train, y_train, X, X_val, y_val, model_name, modelcomments,
+                 architecture, training_epochs, save_model, output_steps)
+                else:
+                    print(f"\n{'=' * 60}")
+                    print(f"Loading model at {fold + 1}/{n_splits}")
+                    modelObj = load_pretrained_model(model_name, fold+1)
+
+                # Sample-level evaluation
+                cv_results, fold_models, best_val_f1, best_fold_idx = evaluate_cv(
+                    modelObj, X_val, y_val, fold, cv_results, fold_models, best_val_f1, best_fold_idx
+                )
+
+                if evaluation:
+                    # Test-level evaluation
+                    test_results_df, test_level_metrics, val_tests_original = evaluate_cv_per_test(
+                        modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original, output_steps=output_steps
+                    )
+                    cv_results_per_test_all.append(test_results_df)
+
+                    original_tests_fold[fold] = val_tests_original
+                    cv_test_level_metrics.append(test_level_metrics)
+
+            else:
+                print("No data in this batch")
+                continue
+
+        if not load_existing:
+            utils_plots.plot_all_training_history(fold_models, title=model_name.strip('.h5') + '_allfoldsresults.jpg')
+
+        # Print CV summary - Sample Level
+        if evaluation: 
+            evaluation_level(title = "Cross-Validation Summary - SAMPLE LEVEL:", 
+                                   search_terms = ['val_accuracy', 'val_precision', 'val_recall', 'val_f1_score'], 
+                                   cv_results= cv_results)
+            evaluation_level(title = "Cross-Validation Summary - TEST LEVEL (averaged per test):", 
+                                   search_terms = ['mean_test_accuracy', 'mean_test_precision', 'mean_test_recall', 'mean_test_f1'],
+                                   cv_results = cv_test_level_metrics)
+            
+        # Save results
+        if False:
+            cv_df.to_csv(running_settings.results_all + os.sep + 'cv_results_sample_level.csv', index=False)
+            cv_test_df.to_csv(running_settings.results_all + os.sep + 'cv_results_test_level.csv', index=False)
+
+            # Save all per-test results
+            all_test_results = pd.concat(cv_results_per_test_all, ignore_index=True)
+            all_test_results.to_csv(running_settings.results_all + os.sep + 'cv_per_test_detailed.csv', index=False)
+
+        best_model = fold_models[best_fold_idx]
+        best_scaler = scalers[best_fold_idx]
+        # Save best_scaler: 
+        save_bestscaler(title='', best_scaler=best_scaler)
+
+        
+        if len(holdout_tests)>0:
+            # Evaluate on holdout set
+            test_indeces = np.arange(len(all_tests))
+
+            # Evaluate on holdout set
+            holdout_results = evaluate_holdout(best_model, best_scaler,
+                                               X, y, test_indeces, test_index, holdout_tests, save=False)
+
+            # modelObj, X_val, y_val, val_test_index, val_tests, fold, val_tests_original
+            holdout_results_df, holdout_level_metrics, holdout_tests_original = evaluate_holdout_per_test(best_model,
+                                                                                                          best_scaler, X, y,
+                                                                                                          test_index,
+                                                                                                          holdout_tests,
+                                                                                                          best_fold_idx,
+                                                                                                          holdout_tests_original)
+
+        all_folds_tests = observe_performance_per_test(original_tests_fold, holdout_tests_original, method=method, modelname=model_name.strip('.h5'))
+
+        return best_model, best_scaler, best_fold_idx, all_folds_tests
+
+    else:
+        # Single model training (no CV) or loading existing model
+        if not load_existing:
+            # Train on all data
+            X_train, X_val, y_train, y_val, X_holdout, y_holdout = split_data(X, y, test_index, fold_idx=None)
+
+            modelObj = classes.MlModel(model_name=model_name)
+            modelObj.define_model()
+            modelObj.model_fit(X_train, y_train, X_val, y_val, plot=True, information=modelcomments)
+            modelObj.save_model(title=modelObj.model_name)
+        else:
+            modelObj = classes.MlModel(model_name=model_name)
+            modelObj.load_model(title=modelObj.model_name)
+
+        return modelObj

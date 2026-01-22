@@ -7,7 +7,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 plt.ion()
 
-from SaraFolder.settings import classes, running_settings
+from SaraFolder.settings import classes, running_settings, utils_CRFmodel, utils_MLphases
 
 
 def error_duration_compute(result, gt, phases):
@@ -67,7 +67,7 @@ def phases_eval(all_results, gt_dict):
     return indiv_errors, indiv_errors_duration
 
 
-def define_res_gts(all_tests, gttype, method):
+def define_res_gts_phases(all_tests, gttype, method):
     all_results = {}
     all_gts = {}
     manualgt = 0
@@ -81,9 +81,7 @@ def define_res_gts(all_tests, gttype, method):
                 manualgt += 1
                 all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_total_manual
         else:
-            if test.gt_phases.t_end is not None:
-                all_gts[
-                    str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_phases.to_dict()
+            all_gts[str(test.user_id) + '_' + str(test.session_id) + '_' + test.context[0]] = test.gt_phases
 
     print(f"Total manual GT used: {manualgt}")
     return all_results, all_gts
@@ -154,6 +152,256 @@ def evaluate_results(all_tests, eval_type, method, dataset, gttype, title, loggi
         if logging:
             lg.stop_logging()
             sys.stdout = sys.__stdout__
+
+    return None
+
+
+def phases_eval_pt2(all_results, all_gts):
+    """
+    all_results, all_gts:
+        dict[key][phase] = (start, end)
+
+    Returns:
+        indiv_errors: detailed metrics
+        indiv_errors_duration: duration-specific metrics (for aggregation)
+    """
+    indiv_errors = {}
+    indiv_errors_duration = {}
+
+    for key in all_results:
+        if key not in all_gts:
+            continue
+
+        indiv_errors[key] = {}
+        indiv_errors_duration[key] = {}
+
+        for phase, pred_interval in all_results[key].items():
+            if phase not in all_gts[key]:
+                continue
+
+            gt_interval = all_gts[key][phase]
+            metrics = compute_interval_metrics(pred_interval, gt_interval)
+
+            indiv_errors[key][phase] = metrics
+            indiv_errors_duration[key][phase] = metrics["duration_error_ms"]
+
+    return indiv_errors, indiv_errors_duration
+
+def compute_interval_metrics(pred, gt):
+    """
+    pred, gt: (start_ms, end_ms)
+    """
+    ps, pe = pred
+    gs, ge = gt
+
+    pred_dur = pe - ps
+    gt_dur = ge - gs
+
+    # Errors
+    start_err = ps - gs
+    end_err = pe - ge
+    dur_err = pred_dur - gt_dur
+
+    # Overlap
+    inter = max(0, min(pe, ge) - max(ps, gs))
+    union = max(pe, ge) - min(ps, gs)
+    iou = inter / union if union > 0 else np.nan
+    # IoU=total time correctly overlapped / total time covered by either
+
+    # Coverage. Coverage disambiguates error direction, IoU does not.
+    # How much of the gt phase is captured by the prediction. “Did I detect the whole true phase?”
+    gt_coverage = inter / gt_dur if gt_dur > 0 else np.nan
+    # How much of the predicted phase overlaps with the gt. “Did I over-segment?”
+    pred_coverage = inter / pred_dur if pred_dur > 0 else np.nan
+
+    return {
+        "start_error_ms": start_err,
+        "end_error_ms": end_err,
+        "duration_error_ms": dur_err,
+        "iou": iou,
+        "gt_coverage": gt_coverage,
+        "pred_coverage": pred_coverage
+    }
+
+def aggregate_errors_pt2(indiv_errors):
+    rows = []
+
+    for subj, phases in indiv_errors.items():
+        for phase, metrics in phases.items():
+            row = {"id": subj, "phase": phase}
+            row.update(metrics)
+            rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    summary = df.groupby("phase").agg(
+        start_mae=("start_error_ms", lambda x: np.mean(np.abs(x))),
+        end_mae=("end_error_ms", lambda x: np.mean(np.abs(x))),
+        duration_mae=("duration_error_ms", lambda x: np.mean(np.abs(x))),
+        iou_mean=("iou", "mean"),
+        iou_std=("iou", "std"),
+        gt_coverage_mean=("gt_coverage", "mean"),
+        pred_coverage_mean=("pred_coverage", "mean"),
+        n=("iou", "count")
+    )
+
+    return summary, df
+
+def create_error_dataframe_pt2(indiv_errors, all_tests):
+    rows = []
+
+    for test_id, phases in indiv_errors.items():
+        participant, _, session, _ = test_id.split("_")
+
+        for phase, metrics in phases.items():
+            row = {
+                "test_id": test_id,
+                "participant": int(participant),
+                "session": int(session),
+                "phase": phase
+            }
+            row.update(metrics)
+            rows.append(row)
+
+    return pd.DataFrame(rows)
+
+def evaluate_results_phases(all_tests, eval_type, method, dataset, gttype, title, logging):
+    title = dataset + '_' + title + '_' + gttype
+    all_results, all_gts = define_res_gts_phases(all_tests, gttype=gttype, method=method)
+    indiv_errors, indiv_errors_duration = phases_eval(all_results, all_gts)
+    summary, df = aggregate_errors(indiv_errors)  # . create_error_dataframe_pt2(indiv_errors, all_tests)
+
+    if dataset == 'parkapp':
+        res_path = running_settings.results_parkapp + \
+                   os.sep + 'results' + title + '.txt'
+    elif dataset == 'synergy':
+        res_path = running_settings.results_synergy + \
+                   os.sep + 'results' + title + '.txt'
+    elif dataset == 'pisa':
+        res_path = running_settings.results_pisatug + \
+                   os.sep + 'results' + title + '.txt'
+    elif dataset == 'all' or 'cvfolds':
+        res_path = running_settings.results_all + \
+                   os.sep + 'results' + title + '.txt'
+
+    if eval_type == 'phases':
+        if logging:
+            # Logger start
+            lg = classes.Logger(res_path)
+            sys.stdout = lg
+
+        print(f"Total individuals evaluated: {len(indiv_errors_duration)}")
+        total_tests = sum(len(tests) for tests in indiv_errors_duration.values())
+        print(f"Total tests evaluated: {total_tests}")
+
+        # Run the aggregation
+        results = aggregate_errors(indiv_errors_duration)
+
+        # Convert to DataFrame for easier analysis
+        df = create_error_dataframe(indiv_errors_duration, all_tests)
+        df.dropna(inplace=True)
+
+        # Analyze patterns
+        patterns = analyze_error_patterns(df)
+
+        # Create visualizations
+        plot_error_distributions(df, title=title, figpath=running_settings.figures_parkapp, eval_type=eval_type)
+
+        if logging:
+            lg.stop_logging()
+            sys.stdout = sys.__stdout__
+
+    if eval_type == 'duration':
+        if logging:
+            # Logger start
+            lg = classes.Logger(res_path)
+            sys.stdout = lg
+        # Run the aggregation
+        results = aggregate_errors(indiv_errors_duration)
+
+        # Convert to DataFrame for easier analysis
+        df = create_error_dataframe(indiv_errors_duration, all_tests)
+
+        # Analyze patterns
+        patterns = analyze_error_patterns(df)
+
+        # Create visualizations
+        plot_error_distributions(df, title=title, figpath=running_settings.figures_all, eval_type=eval_type)
+
+        if logging:
+            lg.stop_logging()
+            sys.stdout = sys.__stdout__
+
+    return None
+
+def evaluate_results_phases_pt2(all_tests, eval_type, method, dataset, gttype, title, logging):
+    title = dataset + '_' + title + '_' + gttype
+    all_results, all_gts = define_res_gts_phases(all_tests, gttype=gttype, method=method)
+    if all_results[list(all_results.keys())[0]] == {}:
+        all_results = utils_CRFmodel.define_results_crf(all_tests, method='ml')
+    indiv_errors, indiv_errors_duration = phases_eval_pt2(all_results, all_gts)
+    summary, df = aggregate_errors_pt2(indiv_errors)  # . create_error_dataframe_pt2(indiv_errors, all_tests)
+    utils_MLphases.plot_phase_evaluation_summary(df, title=None, figsize=(16, 10))
+    # if dataset == 'parkapp':
+    #     res_path = running_settings.results_parkapp + \
+    #                os.sep + 'results' + title + '.txt'
+    # elif dataset == 'synergy':
+    #     res_path = running_settings.results_synergy + \
+    #                os.sep + 'results' + title + '.txt'
+    # elif dataset == 'pisa':
+    #     res_path = running_settings.results_pisatug + \
+    #                os.sep + 'results' + title + '.txt'
+    # elif dataset == 'all' or 'cvfolds':
+    #     res_path = running_settings.results_all + \
+    #                os.sep + 'results' + title + '.txt'
+
+    # if eval_type == 'phases':
+    #     if logging:
+    #         # Logger start
+    #         lg = classes.Logger(res_path)
+    #         sys.stdout = lg
+
+    #     print(f"Total individuals evaluated: {len(indiv_errors_duration)}")
+    #     total_tests = sum(len(tests) for tests in indiv_errors_duration.values())
+    #     print(f"Total tests evaluated: {total_tests}")
+
+    #     # Run the aggregation
+    #     results = aggregate_errors(indiv_errors_duration)
+
+    #     # Convert to DataFrame for easier analysis
+    #     df = create_error_dataframe(indiv_errors_duration, all_tests)
+    #     df.dropna(inplace=True)
+
+    #     # Analyze patterns
+    #     patterns = analyze_error_patterns(df)
+
+    #     # Create visualizations
+    #     plot_error_distributions(df, title=title, figpath=running_settings.figures_parkapp, eval_type=eval_type)
+
+    #     if logging:
+    #         lg.stop_logging()
+    #         sys.stdout = sys.__stdout__
+
+    # if eval_type == 'duration':
+    #     if logging:
+    #         # Logger start
+    #         lg = classes.Logger(res_path)
+    #         sys.stdout = lg
+    #     # Run the aggregation
+    #     results = aggregate_errors(indiv_errors_duration)
+
+    #     # Convert to DataFrame for easier analysis
+    #     df = create_error_dataframe(indiv_errors_duration, all_tests)
+
+    #     # Analyze patterns
+    #     patterns = analyze_error_patterns(df)
+
+    #     # Create visualizations
+    #     plot_error_distributions(df, title=title, figpath=running_settings.figures_all, eval_type=eval_type)
+
+    #     if logging:
+    #         lg.stop_logging()
+    #         sys.stdout = sys.__stdout__
 
     return None
 
@@ -421,9 +669,6 @@ def plot_error_distributions(df, title, figpath, eval_type):
         plt.tight_layout()
         plt.savefig(figpath +os.sep+   'evaltotduration_perindividualmultipletests_' + title+'.jpg', dpi=400)
         plt.show()
-
-
-
 
 
 
