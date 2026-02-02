@@ -17,11 +17,12 @@ if __name__ == "__main__":
         all_tests = utils_MLnew.setup_manual_labelling_csv(all_tests, filename='testssupervised_phases.csv')
         print("Number of tests: " + str(len(all_tests)))
         model, scaler, best_fold, all_fold_tests = utils_MLphases.ML_pipeline_phases(all_tests,
-                                    model_name="mdl_strongbs_six_ph.h5", # let's keep the bigger kernels!
-                                    architecture='strongbs', # strongbs, 'cnn_bilstm', # strongbs # bs_predictbatch, 'tcn'
+                                    model_name="mdl_strongbs_six_phcrf.h5", # let's keep the bigger kernels!
+                                    # strongbs, 'cnn_bilstm', # strongbs # bs_predictbatch, 'tcn' 'strongbs_crf'
+                                    architecture='strongbs_crf', 
                                     use_cv=True,
                                     n_splits='equalcvsplit',  # lopo # equalcvsplit # int number # type: ignore
-                                    training_epochs=30,
+                                    training_epochs=10,
                                     save_model=True,
                                     input_type='sixaxial', # or 'magnitude_acc' # triaxial
                                     output_steps=0,

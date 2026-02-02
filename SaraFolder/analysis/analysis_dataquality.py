@@ -1,6 +1,6 @@
 import numpy as np
 
-from SaraFolder.settings import utils_labelling, utils_plots, utils_evaluation, running_settings, utils_dataquality, \
+from SaraFolder.settings import utils_MLnew, utils_labelling, utils_plots, utils_evaluation, running_settings, utils_dataquality, \
     utils_external
 from SaraFolder.settings.utils_parkaapp import utils_parkapp
 import matplotlib
@@ -22,6 +22,11 @@ if __name__ == "__main__":
     if True:
         df_tests = utils_dataquality.observesingletests_phases(all_tests, method='labelling', title='testssupervised_phases.csv') # testssupervised_comments.csv'
 
+    if True:
+        all_tests = utils_MLnew.setup_manual_labelling_csv(all_tests, filename='testssupervised_phases.csv')
+        # Compare GT manual labelling Sara vs GWalk labels. 
+        utils_dataquality.compare_gtmanualS_gwalk(all_tests, title='compare_gt_sara_vs_gwalk.csv')
+    
     if False:
         df_tests = utils_dataquality.observesingletests(all_tests, method='labelling', title='testssupervised_manualmsstartend_new.csv') # testssupervised_comments.csv'
 

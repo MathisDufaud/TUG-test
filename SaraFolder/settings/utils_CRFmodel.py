@@ -6,9 +6,22 @@ from tensorflow.keras.layers import Input, Conv1D, BatchNormalization, Dropout, 
 from tensorflow.keras.models import Model
 import tensorflow.keras.backend as K
 
-# Phase labels and ordering
+from SaraFolder.settings import utils_MLphases
+
+
+###################################################################################################
+
+PHASE_MAP = {
+    "totalDuration": ("msEnd", "msStart"),
+    "Sit-to-stand": ("msWalking1", "msStart"),
+    "Walking1": ("msTurn1", "msWalking1"),
+    "Turn1": ("msWalking2", "msTurn1"),
+    "Walking2": ("msTurn2", "msWalking2"),
+    "Turn2+Stand-to-sit": ("msEnd", "msTurn2"),
+}
+
 PHASE_LABELS = {
-    '0:No test': 'No test',
+    '0:No test': 'totalDuration',
     '1:Sit-to-stand': 'Sit-to-stand',
     '2:Turn1': 'Turn1',
     '3:Turn2+Stand-to-sit': 'Turn2+Stand-to-sit',
@@ -25,10 +38,16 @@ PHASE_ORDER = [
     'Turn2+Stand-to-sit',
 ]
 
+class_names = {0: 'No test', 1: 'Sit-to-stand', 2: 'Turn1', 3: 'Turn2+Stand-to-sit', 4: 'Walking1', 5:'Walking2'}
+
 # Create label to index mapping
-PHASE_TO_IDX = {phase: idx for idx, phase in enumerate(PHASE_ORDER)}
+ALL_PHASES = PHASE_ORDER
+PHASE_TO_IDX = {phase: idx for idx, phase in enumerate(ALL_PHASES)}
 IDX_TO_PHASE = {idx: phase for phase, idx in PHASE_TO_IDX.items()}
-NUM_CLASSES = len(PHASE_ORDER)
+NUM_CLASSES = len(ALL_PHASES)
+
+
+###################################################################################################
 
 
 class CRFLayer(Layer):
@@ -120,8 +139,8 @@ class CRFLayer(Layer):
         At each timestep, the neural network gives emission scores for each phase
         We need to find the best sequence respecting transition constraints
         """
-        batch_size = tf.shape(emissions)[0]
-        seq_length = tf.shape(emissions)[1]
+        batch_size = tf.shape(emissions)[0]  # type: ignore
+        seq_length = tf.shape(emissions)[1]  # type: ignore
         
         # Initialize with start transitions
         score = emissions[:, 0, :] + self.start_transitions  # (batch, num_classes)
@@ -209,8 +228,8 @@ class CRFLayer(Layer):
         3: Add end transition
         
         """
-        batch_size = tf.shape(emissions)[0]
-        seq_length = tf.shape(emissions)[1]
+        batch_size = tf.shape(emissions)[0] # type: ignore
+        seq_length = tf.shape(emissions)[1] # type: ignore
         tags = tf.cast(tags, tf.int32)
         
         # Start transitions
@@ -235,7 +254,7 @@ class CRFLayer(Layer):
     
     def log_norm(self, emissions):
         """Log-sum-exp of all possible sequences (partition function)."""
-        seq_length = tf.shape(emissions)[1]
+        seq_length = tf.shape(emissions)[1] # type: ignore
         
         # Initialize with start transitions
         score = emissions[:, 0, :] + self.start_transitions
@@ -291,7 +310,7 @@ class CRFModel(Model):
         gradients = tape.gradient(loss, trainable_vars)
         
         # Update weights
-        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars)) # type: ignore
         
         # Get predictions for metrics (viterbi decode)
         y_pred = self.crf_layer.viterbi_decode(emissions)
@@ -388,7 +407,7 @@ def build_crf_model(window_size=60, n_features=9, output_steps=15):
             kernel_initializer="glorot_uniform")
     )(x)
 
-    emissions = tf.keras.layers.LayerNormalization(axis=-1)(emissions)
+    emissions = tf.keras.layers.LayerNormalization(axis=-1)(emissions) # type: ignore
 
     # Create emissions model (for computing emissions)
     emissions_model = Model(inp, emissions)

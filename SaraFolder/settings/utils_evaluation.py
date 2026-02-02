@@ -341,7 +341,8 @@ def evaluate_results_phases_pt2(all_tests, eval_type, method, dataset, gttype, t
         all_results = utils_CRFmodel.define_results_crf(all_tests, method='ml')
     indiv_errors, indiv_errors_duration = phases_eval_pt2(all_results, all_gts)
     summary, df = aggregate_errors_pt2(indiv_errors)  # . create_error_dataframe_pt2(indiv_errors, all_tests)
-    utils_MLphases.plot_phase_evaluation_summary(df, title=None, figsize=(16, 10))
+    utils_MLphases.plot_phase_evaluation_summary(df, figsize=(16, 10), title=title+'.png')
+    
     # if dataset == 'parkapp':
     #     res_path = running_settings.results_parkapp + \
     #                os.sep + 'results' + title + '.txt'
@@ -671,7 +672,6 @@ def plot_error_distributions(df, title, figpath, eval_type):
         plt.show()
 
 
-
 def parse_key(key: str):
     """
     Extract (individual_id, test_iteration, base_key) from result key.
@@ -862,3 +862,90 @@ def create_error_dataframe(indiv_errors_duration, all_tests):
     return pd.DataFrame(rows)
 
 
+def analyze_and_plot_subphases(df):
+    """
+    Analysis and visualization of subphase metrics by participant and dataset.
+    Subphases explicitly exclude rows where phase == 'totalDuration'.
+    """
+    metrics = [
+        "iou",
+        "gt_coverage",
+        "pred_coverage",
+    ]
+    df = df.copy()
+
+    # ------------------------------------------------------------
+    # 1. Parse participant and dataset from id
+    # ------------------------------------------------------------
+    df["participant"] = df["id"].str.split("_").str[0].astype(int)
+    df["dataset"] = df["id"].str.split("_").str[1]
+
+    # ------------------------------------------------------------
+    # 2. Restrict to subphases (exclude totalDuration)
+    # ------------------------------------------------------------
+    df = df[df["phase"] != "totalDuration"]
+
+    # ------------------------------------------------------------
+    # 3. Aggregate statistics
+    # ------------------------------------------------------------
+    participant_stats = (
+        df.groupby("participant")[metrics]
+        .agg(["mean", "std", "median", "count"])
+    )
+
+    dataset_stats = (
+        df.groupby("dataset")[metrics]
+        .agg(["mean", "std", "median", "count"])
+    )
+
+    # ------------------------------------------------------------
+    # 4. Subplots by participant
+    # ------------------------------------------------------------
+    fig, axes = plt.subplots(1, 3, figsize=(12, 7))
+    axes = axes.flatten()
+
+    for ax, metric in zip(axes, metrics):
+        df.boxplot(column=metric, by="participant", ax=ax, grid=False)
+        ax.set_title(metric)
+        ax.set_xlabel("Participant")
+        ax.set_ylabel(metric)
+        ax.tick_params(axis="x", rotation=45)
+
+    fig.suptitle("Subphase metrics by participant", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    # ------------------------------------------------------------
+    # 5. Subplots by dataset
+    # ------------------------------------------------------------
+    fig, axes = plt.subplots(1, 3, figsize=(12, 7))
+    axes = axes.flatten()
+
+    for ax, metric in zip(axes, metrics):
+        df.boxplot(column=metric, by="dataset", ax=ax, grid=False)
+        ax.set_title(metric)
+        ax.set_xlabel("Dataset")
+        ax.set_ylabel(metric)
+        ax.tick_params(axis="x", rotation=45)
+
+    fig.suptitle("Subphase metrics by dataset", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    # 7. Printed analysis
+    # ------------------------------------------------------------
+    print("\n=== Participant-level subphase summary ===")
+    print(participant_stats.round(3))
+
+    print("\n=== Dataset-level subphase summary ===")
+    print(dataset_stats.round(3))
+
+    print(
+        "\nInterpretation:\n"
+        "- IoU and coverage metrics reflect spatial/temporal overlap quality at subphase level\n"
+        "- totalDuration_error_ms here quantifies timing drift while excluding the aggregate phase\n"
+        "- High zero-IoU or NaN rates indicate systematic subphase detection failures\n"
+        "- Participant spread suggests subject-specific execution variability\n"
+    )
+
+    return participant_stats, dataset_stats

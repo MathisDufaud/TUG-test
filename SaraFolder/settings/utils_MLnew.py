@@ -28,40 +28,45 @@ def setup_manual_labelling_csv(all_tests, filename):
     firstTurn = 0
     secondTurn = 0
     startWalk2 = 0
+    output_tests = []
 
     for test in all_tests:
         indexid = test.user_id + '_' + str(test.session_id)
         if indexid in df_manual['Unnamed: 0'].values:
             df_test = df_manual[df_manual['Unnamed: 0'] == indexid]
-            secStart = df_test['secStart'].values[0]
-            secEnd = df_test['secEnd'].values[0]
-            msStart = secStart * 1000
-            msEnd = secEnd * 1000
-            if phases:
-                startWalk1 = df_test['startWalk1'].values[0]*1000
-                firstTurn = df_test['firstTurn'].values[0]*1000
-                startWalk2 = df_test['startWalk2'].values[0]*1000
-                secondTurn = df_test['secondTurn'].values[0]*1000
+            if 'not' not in df_test['comment'].values[0]:
+                secStart = df_test['secStart'].values[0]
+                secEnd = df_test['secEnd'].values[0]
+                msStart = secStart * 1000
+                msEnd = secEnd * 1000
+                if phases:
+                    startWalk1 = df_test['startWalk1'].values[0]*1000
+                    firstTurn = df_test['firstTurn'].values[0]*1000
+                    startWalk2 = df_test['startWalk2'].values[0]*1000
+                    secondTurn = df_test['secondTurn'].values[0]*1000
 
-            test.processed_data['testBool'] = False
-            test.processed_data.loc[(test.processed_data['msFromStart'] >= msStart) &
-                                    (test.processed_data['msFromStart'] <= msEnd), 'testBool'] = True
-            if phases: 
-                test.processed_data['testPhases'] = 'No test'
+                test.processed_data['testBool'] = False
                 test.processed_data.loc[(test.processed_data['msFromStart'] >= msStart) &
-                                        (test.processed_data['msFromStart'] <= startWalk1), 'testPhases'] = 'Sit-to-stand'
-                test.processed_data.loc[(test.processed_data['msFromStart'] >= startWalk1) &
-                                        (test.processed_data['msFromStart'] <= firstTurn), 'testPhases'] = 'Walking1'
-                test.processed_data.loc[(test.processed_data['msFromStart'] >= firstTurn) &
-                                        (test.processed_data['msFromStart'] <= startWalk2), 'testPhases'] = 'Turn1'
-                test.processed_data.loc[(test.processed_data['msFromStart'] >= startWalk2) &
-                                        (test.processed_data['msFromStart'] <= secondTurn), 'testPhases'] = 'Walking2'
-                test.processed_data.loc[(test.processed_data['msFromStart'] >= secondTurn) &
-                                        (test.processed_data['msFromStart'] <= msEnd), 'testPhases'] = 'Turn2+Stand-to-sit'                   
+                                        (test.processed_data['msFromStart'] <= msEnd), 'testBool'] = True
+                if phases: 
+                    test.processed_data['testPhases'] = 'No test'
+                    test.processed_data.loc[(test.processed_data['msFromStart'] >= msStart) &
+                                            (test.processed_data['msFromStart'] <= startWalk1), 'testPhases'] = 'Sit-to-stand'
+                    test.processed_data.loc[(test.processed_data['msFromStart'] >= startWalk1) &
+                                            (test.processed_data['msFromStart'] <= firstTurn), 'testPhases'] = 'Walking1'
+                    test.processed_data.loc[(test.processed_data['msFromStart'] >= firstTurn) &
+                                            (test.processed_data['msFromStart'] <= startWalk2), 'testPhases'] = 'Turn1'
+                    test.processed_data.loc[(test.processed_data['msFromStart'] >= startWalk2) &
+                                            (test.processed_data['msFromStart'] <= secondTurn), 'testPhases'] = 'Walking2'
+                    test.processed_data.loc[(test.processed_data['msFromStart'] >= secondTurn) &
+                                            (test.processed_data['msFromStart'] <= msEnd), 'testPhases'] = 'Turn2+Stand-to-sit'  
+                    
+                output_tests.append(test)
+            else: 
+                print("Removed test due to NOT OKAY segmentation")            
         else: 
-            # Remove test from all_tests
-            all_tests.remove(test)
-    return all_tests
+            print("Removed test due to missing manual labelling")
+    return output_tests
 
 def evaluation_level(cv_results):
     print(f"\n{'=' * 60}")

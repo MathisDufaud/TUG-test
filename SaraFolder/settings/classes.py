@@ -60,32 +60,6 @@ class SmartphoneInfo:
     app_version: Optional[str] = None
     sampling_rate: Optional[float] = None
 
-# @dataclass
-# class SensorData:
-#     """Stores time-series sensor data."""
-#     timestamps: Optional[np.ndarray] = None
-#     values: Optional[np.ndarray] = None
-#
-#     def is_loaded(self) -> bool:
-#         return self.timestamps is not None and self.values is not None
-#
-#     @property
-#     def duration(self) -> Optional[float]:
-#         if self.is_loaded():
-#             return self.timestamps[-1] - self.timestamps[0]
-#         return None
-#
-# @dataclass
-# class RawSensorData:
-#     """Container for raw sensor measurements."""
-#     accelerometer: SensorData = field(default_factory=SensorData)
-#     gyroscope: SensorData = field(default_factory=SensorData)
-#     orientation: SensorData = field(default_factory=SensorData)
-#
-#     def is_complete(self) -> bool:
-#         return (self.accelerometer.is_loaded() and
-#                 self.gyroscope.is_loaded())
-
 @dataclass
 class TUGPhases:
     """Ground truth phase timings for TUG test."""
@@ -191,10 +165,10 @@ class TUGTest:
         ax3.plot(df_plot["relative_timestamp"], df_plot["rotRate.beta"], label="RotRate Beta (°)", color='darkgreen', linestyle="-.")
         ax3.plot(df_plot["relative_timestamp"], df_plot["rotRate.gamma"], label="RotRate Gamma (°)", color='darkred', linestyle=":")
 
-        if self.dataset_id == 'parkapp':
-            ax1.axvspan(t_start, t_end, color="orange", alpha=0.2, label="Total duration")
-            ax1.axvspan(t_start_turn, t_end_turn, color="limegreen", alpha=0.5, label="First turn")
-            ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.5, label="Second turn")
+        # if self.dataset_id == 'parkapp':
+        #     ax1.axvspan(t_start, t_end, color="orange", alpha=0.2, label="Total duration")
+        #     ax1.axvspan(t_start_turn, t_end_turn, color="limegreen", alpha=0.5, label="First turn")
+        #     ax1.axvspan(t_start_turn2, t_start_sit, color="darkgreen", alpha=0.5, label="Second turn")
 
         ax1.grid()
         ax1.legend(loc="upper left")

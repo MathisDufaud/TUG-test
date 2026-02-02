@@ -475,20 +475,19 @@ def add_gt_manual_all(all_tests, title, dataset):
     csvpath = running_settings.results_all + os.sep + title
     dftests = pd.read_csv(csvpath, index_col=0)
     for test in all_tests:
-        if test.gt_total_manual is None or np.isnan(test.gt_total_manual):
-            index = test.user_id + '_' + str(test.session_id)
-            if 'new' in index:
-                index = index.replace('_pisa_new', '_pisa')
-                if index.split('_')[2] == '1':
-                    index = index.replace('_1', '_2')
-            if index in dftests.index:
-                test.gt_total_manual = dftests.loc[index, 'secEnd'] - dftests.loc[index, 'secStart']
-            else:
-                test.gt_total_manual = None
+        index = test.user_id + '_' + str(test.session_id)
+        if 'new' in index:
+            index = index.replace('_pisa_new', '_pisa')
+            if index.split('_')[2] == '1':
+                index = index.replace('_1', '_2')
+        if index in dftests.index:
+            test.gt_total_manual = dftests.loc[index, 'secEnd'] - dftests.loc[index, 'secStart']
+        else:
+            test.gt_total_manual = None
     return all_tests
 
 
-def load_all_tests(dataset_id, context='supervised', title='testssupervised_manualmsstartend_new.csv'):
+def load_all_tests(dataset_id, context='supervised', title="testssupervised_phases.csv"):#'testssupervised_manualmsstartend_new.csv'):
 
     if dataset_id == 'parkapp':
         df_fusion = ready_df()

@@ -9,6 +9,8 @@ import numpy as np
 from scipy.signal import find_peaks
 
 import matplotlib.pyplot as plt
+
+from SaraFolder.settings import utils_CRFmodel
 plt.ion()
 from SaraFolder.settings import running_settings, utils_labelling, utils_evaluation, utils_MLnew
 import pandas as pd
@@ -165,7 +167,7 @@ def observesingletests_phases(all_tests, method, title):
     for test in all_tests:
         indexid = test.user_id + '_' + str(test.session_id)
 
-        if indexid in df_tests.index:
+        if indexid in df_tests.index and 'not' not in df_tests.loc[indexid]['comment']:
             print(f"Skipping {indexid}, already in dataframe.")
             continue
 
@@ -2073,13 +2075,13 @@ def plot_smoothing_frequency(alpha, alpha_filtered, beta, beta_filtered, magnitu
 def compute_diffs(gt_gwalk, gt_manual):
     diffs = {}
     for key in gt_gwalk.keys():
-        if gt_gwalk[key] is not None and gt_manual[key] is not None and gt_manual[key] is not np.nan:
+        if gt_gwalk[key] is not None and gt_manual[key] is not None and gt_manual[key] is not np.nan and gt_gwalk[key] > 0:
             gtg = gt_gwalk[key]
             gtm = gt_manual[key]
             if gtg > 500:
-                gtg = gtg/500
+                gtg = gtg/1000
             if gtm > 500:
-                gtm = gtm/500
+                gtm = gtm/1000
             diffs[key] = gtg - gtm
             if abs(diffs[key]) > 5:
                 print("Large diff in " + key + ": " + str(diffs[key]))
@@ -2219,7 +2221,7 @@ def plot_gts(gt_gwalk, gt_manual):
           f"ParkApp: {len(data_by_dataset['parkapp'])}, "
           f"All: {len(all_data)}")
 
-    pass
+    return diffs
 
 
 def observe_groundtruth(all_tests):
@@ -2245,6 +2247,74 @@ def observe_groundtruth(all_tests):
 
         df_gts.to_csv(running_settings.results_all + os.sep + 'groundtruths_comparison.csv')
 
-    plot_gts(gt_gwalk, gt_manual)
+    diffs = plot_gts(gt_gwalk, gt_manual)
 
     return tests_gwalk
+
+def compute_gt_phases(test):
+    """
+    Returns a dict:
+        { phase_name : error_in_ms }
+    where error = estimated_duration - ground_truth_duration
+    """
+
+    df = test.processed_data
+    gt_timestamps_startend = {}
+    # ---------- per-phase errors ----------
+    for phase, (end_key, start_key) in utils_CRFmodel.PHASE_MAP.items():
+
+        # ---------- ground truth duration ----------
+        if phase == "totalDuration":
+            not_no_test = df["testPhases"] != "No test"
+
+            gt_start = df.loc[not_no_test, "msFromStart"].iloc[0]
+            gt_end   = df.loc[not_no_test, "msFromStart"].iloc[-1]
+            gt_duration = gt_end - gt_start
+        else: 
+            gt_rows = df[df["testPhases"] == phase]
+            gt_start = gt_rows["msFromStart"].iloc[0]
+            gt_end   = gt_rows["msFromStart"].iloc[-1]
+            gt_duration = gt_end - gt_start
+        
+        gt_timestamps_startend[phase] = (gt_start, gt_end) 
+
+    return gt_timestamps_startend
+
+def compare_gtmanualS_gwalk(all_tests, title='compare_gt_sara_vs_gwalk.csv'):
+    gt_gwalk = {}
+    gt_manual = {}
+    tests_gwalk = []
+
+    for test in all_tests:
+        indexid = test.user_id + '_' + str(test.session_id)
+        if indexid == '2_synergy_2':  # specific fix for this test with wrong id
+            print(1)
+        try: 
+            gt_timestamps_startend = compute_gt_phases(test)
+            index = test.user_id + '_' + str(test.session_id)
+            gt_gwalk[index] = test.gt_total_gwalk
+            gt_manual[index] = gt_timestamps_startend['totalDuration'][1] - gt_timestamps_startend['totalDuration'][0]
+
+            if np.isnan(gt_gwalk[index]) or gt_gwalk[index] is None:
+                print(f"Missing gwalk ground truth for test: {index}")
+            else:
+                tests_gwalk.append(test)
+        except Exception as e:
+            print(f"Error processing test {test.user_id}_{test.session_id}: {e}")
+
+    diffs = plot_gts(gt_gwalk, gt_manual)
+
+    for (k, d) in diffs.items(): 
+        if abs(d)>2: 
+            print(f"abs(GTG - GTM) greater than 2 seconds for: {k}: {np.round(d, 2)}")
+            test = [t for t in all_tests if (t.user_id + '_' + str(t.session_id)) == k][0]
+            test.plot_raw_data()
+
+    if False:
+        df_gts = pd.DataFrame(
+            {'GWalk_GT': gt_gwalk,
+             'Manual_GT': gt_manual}
+        )
+
+        df_gts.to_csv(running_settings.results_all + os.sep + 'groundtruths_comparison.csv')
+
